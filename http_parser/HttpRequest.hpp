@@ -1,21 +1,37 @@
-// HttpRequest.hpp
-#ifndef HTTP_REQUEST_HPP
-#define HTTP_REQUEST_HPP
+#ifndef HTTPREQUEST_HPP
+#define HTTPREQUEST_HPP
 
 #include <string>
 #include <map>
-#include "HttpEnums.hpp"
+#include <stdexcept>
+#include <sstream>
+#include <algorithm> // для std::transform
+#include <cctype>    // для ::tolower
+#include <iostream>  // для вывода ошибок
 
-struct HttpRequest {
-    HttpMethod method;
-    std::string uri;
-    std::string version;
-    std::map<std::string, std::string> headers;
-    std::string body;
+class HttpRequest
+{
+public:
+    HttpRequest(const std::string &raw_request);
+    ~HttpRequest();
 
-    // По умолчанию — UNKNOWN-метод, пустые остальные поля
-    HttpRequest()
-        : method(UNKNOWN), uri(""), version(""), body("") {}
+    std::string getMethod() const;
+    std::string getUri() const;
+    std::string getHttpVersion() const;
+    const std::map<std::string, std::string> &getHeaders() const;
+    std::string getBody() const;
+
+private:
+    std::string _method;
+    std::string _uri;
+    std::string _http_version;
+    std::map<std::string, std::string> _headers;
+    std::string _body;
+
+    void _parse(const std::string &raw_request);
+    void _parseRequestLine(std::stringstream &request_stream);
+    void _parseHeaders(std::stringstream &request_stream);
+    void _parseBody(std::stringstream &request_stream);
 };
 
-#endif // HTTP_REQUEST_HPP
+#endif // HTTPREQUEST_HPP

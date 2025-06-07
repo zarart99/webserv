@@ -1,21 +1,27 @@
-// HttpResponse.hpp
-#ifndef HTTP_RESPONSE_HPP
-#define HTTP_RESPONSE_HPP
+#ifndef HTTPRESPONSE_HPP
+#define HTTPRESPONSE_HPP
 
 #include <string>
 #include <map>
-#include <vector>
-#include "HttpEnums.hpp"
 
-struct HttpResponse {
-    HttpStatus statusCode;
-    std::string reasonPhrase;
-    std::map<std::string, std::string> headers;
-    std::vector<char> bodyBuffer;
+class HttpResponse
+{
+public:
+    HttpResponse();
+    ~HttpResponse();
 
-    // По умолчанию — 500 InternalServerError, пустые остальные поля
-    HttpResponse()
-        : statusCode(InternalServerError), reasonPhrase("") {}
+    void setStatusCode(int code);
+    void setStatusMessage(const std::string &message);
+    void addHeader(const std::string &key, const std::string &value);
+    void setBody(const std::string &body);
+
+    std::string buildResponse() const;
+
+private:
+    int _statusCode;
+    std::string _statusMessage;
+    std::map<std::string, std::string> _headers;
+    std::string _body;
 };
 
-#endif // HTTP_RESPONSE_HPP
+#endif // HTTPRESPONSE_HPP

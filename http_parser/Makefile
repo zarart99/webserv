@@ -3,9 +3,9 @@ NAME    = parser
 CC       = g++
 FLAGS  = -Wall -Wextra -Werror -std=c++98
 
-SRCS      = Parser.cpp main.cpp
+SRCS      = HttpRequest.cpp HttpResponse.cpp main.cpp
 OBJS      = $(SRCS:.cpp=.o)
-HDRS      = HttpEnums.hpp HttpRequest.hpp HttpResponse.hpp Parser.hpp
+HDRS      = HttpRequest.hpp HttpResponse.hpp
 RM		= rm -f
 
 
@@ -25,3 +25,5 @@ clean:
 
 fclean: clean
 	$(RM) $(NAME)
+
+re: fclean all
