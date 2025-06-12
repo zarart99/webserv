@@ -5,19 +5,20 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include "HttpResponse.hpp"
 
 Server::Server(const std::vector<ServerConfig>& configs) {
-    init_listeners(configs);
+    initListeners(configs);
 }
 
 Server::~Server() {
-    for (size_t i = 0; i < _fds.size(); ++i)
-        close(_fds[i].fd);
-    for (std::map<int, Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+    for (size_t i = 0; i < fds.size(); ++i)
+        close(fds[i].fd);
+    for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it)
         delete it->second;
 }
 
-void Server::init_listeners(const std::vector<ServerConfig>& configs) {
+void Server::initListeners(const std::vector<ServerConfig>& configs) {
     for (size_t i = 0; i < configs.size(); ++i) {
         const std::vector<ListenStruct>& listenVec = configs[i].listen;
         for (size_t j = 0; j < listenVec.size(); ++j) {
@@ -36,76 +37,85 @@ void Server::init_listeners(const std::vector<ServerConfig>& configs) {
             pfd.fd = listen_fd;
             pfd.events = POLLIN;
             pfd.revents = 0;
-            _fds.push_back(pfd);
+            fds.push_back(pfd);
 
-            _listenConfigs[listen_fd] = configs[i];
+            listenConfigs[listen_fd] = configs[i];
         }
     }
 }
 
 void Server::run() {
     while (true) {
-        int ret = poll(&_fds[0], _fds.size(), 1000); // 1 сек
-        if (ret < 0) { perror("poll"); break; }
-        handle_poll_events();
+        try {
+            int ret = poll(&fds[0], fds.size(), 1000); // 1 сек
+            if (ret < 0) { perror("poll"); break; }
+            handlePollEvents();
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Unknown error occurred" << std::endl;
+        }
     }
 }
 
-void Server::handle_poll_events() {
-    for (size_t i = 0; i < _fds.size(); ++i) {
-        if (_fds[i].revents & POLLIN) {
-            if (_listenConfigs.count(_fds[i].fd)) {
-                accept_new_client(_fds[i].fd);
-            } else if (_clients.count(_fds[i].fd)) {
-                _clients[_fds[i].fd]->handle_read();
+void Server::handlePollEvents() {
+    for (size_t i = 0; i < fds.size(); ++i) {
+        int fd = fds[i].fd;
+        // 1. Новое подключение
+        if (fds[i].revents & POLLIN && listenConfigs.count(fd)) {
+            acceptNewClient(fd);
+            std::cout << "New client connected: fd " << fd << std::endl;
+            continue;
+        }
+
+        if (fds[i].revents & POLLIN && clients.count(fd)) {
+            clients[fd]->handleRead();
+
+            // Если буфер запроса содержит полный запрос и нет ответа — сгенерировать ответ!
+            if (clients[fd]->isRequestReady() && clients[fd]->getWriteBuffer().empty()) {
+                HttpResponse httpResponse = handleHttpRequest(clients[fd]->getReadBuffer());
+                std::string response = httpResponse.buildResponse();
+                clients[fd]->setResponse(response);
+                // poll автоматически увидит, что POLLOUT уже стоит, и вызовет handleWrite
             }
         }
-        if (_fds[i].revents & POLLOUT && _clients.count(_fds[i].fd)) {
-            _clients[_fds[i].fd]->handle_write();
+        if (fds[i].revents & POLLOUT && clients.count(fds[i].fd)) {
+            clients[fds[i].fd]->handleWrite();
         }
     }
-    // Удалить закрытых клиентов из _fds/_clients...
-    // (реализация по твоему усмотрению)
+    for (size_t i = 0; i < fds.size(); ) {
+        int fd = fds[i].fd;
+        if (clients.count(fd) && clients[fd]->isDone()) {
+            removeClient(fd);
+        } else {
+            ++i;
+        }
+    }
 }
 
-void Server::accept_new_client(int listen_fd) {
+void Server::acceptNewClient(int listen_fd) {
     int client_fd = accept(listen_fd, NULL, NULL);
     if (client_fd < 0) return;
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
     struct pollfd pfd = { client_fd, POLLIN | POLLOUT, 0 };
-    _fds.push_back(pfd);
+    fds.push_back(pfd);
 
-    // Связываем клиента с правильной конфигой
-    ServerConfig* config = &_listenConfigs[listen_fd];
-    _clients[client_fd] = new Client(client_fd, config);
+    ServerConfig* config = &listenConfigs[listen_fd];
+    clients[client_fd] = new Client(client_fd, config);
 }
 
-void Server::remove_client(int client_fd) {
+void Server::removeClient(int client_fd) {
     close(client_fd);
-    delete _clients[client_fd];
-    _clients.erase(client_fd);
+    delete clients[client_fd];
+    clients.erase(client_fd);
 
-    // удалить fd из _fds
-    for (std::vector<struct pollfd>::iterator it = _fds.begin(); it != _fds.end(); ++it) {
+    for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it) {
         if (it->fd == client_fd) {
-            _fds.erase(it);
+            fds.erase(it);
             break;
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // #include <iostream>

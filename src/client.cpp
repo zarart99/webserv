@@ -1,33 +1,47 @@
 #include "client.hpp"
 #include <unistd.h>
 #include <sys/socket.h>
+#include "HttpResponse.hpp"
 
-Client::Client(int fd, ServerConfig* config) : _fd(fd), _config(config), _finished(false) {}
+Client::Client(int fd, ServerConfig* config) : fd(fd), config(config), finished(false) {}
 
-Client::~Client() { close(_fd); }
+Client::~Client() { close(fd); }
 
-void Client::handle_read() {
+void Client::handleRead() {
     char buf[4096];
-    int n = recv(_fd, buf, sizeof(buf), 0);
-    (void)_config; // заглушка
+    int n = recv(fd, buf, sizeof(buf), 0);
+    (void)config; // TODO убрать заглушку
+
     if (n > 0) {
-        _read_buffer.append(buf, n);
-        // можно сигнализировать парсеру HTTP о новых данных
+        readBuffer.append(buf, n);
+        if (isRequestReady() && writeBuffer.empty()) {
+            std::cout << "Processing HTTP request: \n" << readBuffer << std::endl;
+            HttpResponse httpResponse = handleHttpRequest(readBuffer);
+            std::string response = httpResponse.buildResponse();
+            setResponse(response);
+        }
     } else if (n == 0) {
-        _finished = true;
+        finished = true; // клиент закрыл соединение
+    } else if (n < 0) {
+        finished = true;
+        std::cerr << "Read error on fd " << fd << std::endl;
     }
 }
 
-void Client::handle_write() {
-    if (_write_buffer.empty()) return;
-    int n = send(_fd, _write_buffer.c_str(), _write_buffer.size(), 0);
-    if (n > 0) _write_buffer.erase(0, n);
-    if (_write_buffer.empty()) _finished = true; // если отправлено всё
+void Client::handleWrite() {
+    if (writeBuffer.empty()) return;
+    int n = send(fd, writeBuffer.c_str(), writeBuffer.size(), 0);
+    std::cout << "Response sent and connection closing (fd=" << fd << ")\n";
+    if (n > 0) writeBuffer.erase(0, n);
+    if (writeBuffer.empty()) finished = true; // если отправлено всё
 }
 
-std::string& Client::get_request_buffer() { return _read_buffer; }
-bool Client::is_request_ready() {
-    return (_read_buffer.find("\r\n\r\n") != std::string::npos); // очень просто
+std::string& Client::getRequestBuffer() { return readBuffer; }
+bool Client::isRequestReady() {
+    return (readBuffer.find("\r\n\r\n") != std::string::npos);
 }
-void Client::set_response(const std::string& resp) { _write_buffer = resp; }
-bool Client::is_done() { return _finished; }
+void Client::setResponse(const std::string& resp) { writeBuffer = resp; }
+bool Client::isDone() { return finished; }
+
+std::string& Client::getReadBuffer() { return readBuffer; }
+std::string& Client::getWriteBuffer() { return writeBuffer; }
