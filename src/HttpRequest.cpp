@@ -13,6 +13,31 @@ static std::string trim(const std::string &s)
     return s.substr(first, (last - first + 1));
 }
 
+bool HttpRequest::isValid() const {
+    if (_method.empty() || _uri.empty() || _http_version.empty())
+    {
+        throw std::runtime_error("400 Bad Request: Missing required fields in request");
+    }
+
+    if (_headers.find("Host") == _headers.end())
+    {
+        throw std::runtime_error("400 Bad Request: Missing 'Host' header");
+    }
+
+    if (_method == "POST" && _body.empty())
+    {
+        throw std::runtime_error("400 Bad Request: POST request must have a body");
+    }
+    if (_method == "DELETE" && _uri.empty())
+    {
+        throw std::runtime_error("400 Bad Request: DELETE request must specify a URI");
+    }
+    if (_method == "GET" && !_body.empty())
+    {
+        throw std::runtime_error("400 Bad Request: GET request must not have a body");
+    }
+}
+
 // Приводит строку к нижнему регистру
 static std::string toLower(std::string s)
 {
