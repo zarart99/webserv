@@ -12,6 +12,8 @@ int main(int argc, char** argv)
 	try
 	{
 		config.parseConfigFile(argv[1]);
+		//config.printConfig();
+
 	}
 	catch(const std::exception& e)
 	{
