@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include "HttpRequest.hpp"
 
 class HttpResponse
 {
@@ -13,7 +14,7 @@ public:
     void setStatusCode(int code);
     void setStatusMessage(const std::string &message);
     void addHeader(const std::string &key, const std::string &value);
-    void setBody(const std::string &body);
+    void setBody(const std::string &_body);
 
     std::string buildResponse() const;
 
@@ -24,4 +25,7 @@ private:
     std::string _body;
 };
 
-#endif // HTTPRESPONSE_HPP
+HttpResponse handleHttpRequest(const std::string& request);
+
+
+#endif
