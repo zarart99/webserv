@@ -61,6 +61,11 @@ void HttpRequest::_parseRequestLine(std::stringstream &request_stream)
         throw std::runtime_error("400 Bad Request: Malformed request line. Expected 'METHOD URI VERSION'");
     }
 
+    std::string extra;
+    if (line_stream >> extra) {
+        throw std::runtime_error("400 Bad Request");
+    }
+
     if (_method != "GET" && _method != "POST" && _method != "DELETE")
     {
         throw std::runtime_error("501 Not Implemented: Unsupported method '" + _method + "'");
@@ -68,6 +73,10 @@ void HttpRequest::_parseRequestLine(std::stringstream &request_stream)
     if (_http_version != "HTTP/1.1")
     {
         throw std::runtime_error("505 HTTP Version Not Supported: Server only accepts HTTP/1.1");
+    }
+
+    if (_uri.empty() || _uri[0] != '/') {
+        throw std::runtime_error("400 Bad Request");
     }
 }
 
