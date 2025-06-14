@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <cstdio>
 #include "HttpResponse.hpp"
 
 Server::Server(const std::vector<ServerConfig>& configs) {
@@ -73,7 +74,7 @@ void Server::handlePollEvents() {
 
             // Если буфер запроса содержит полный запрос и нет ответа — сгенерировать ответ!
             if (clients[fd]->isRequestReady() && clients[fd]->getWriteBuffer().empty()) {
-                HttpResponse httpResponse = handleHttpRequest(clients[fd]->getReadBuffer());
+                HttpResponse httpResponse = handleHttpRequest(clients[fd]->getReadBuffer()); // Саша, заменить надо на RequestHandler.cpp
                 std::string response = httpResponse.buildResponse();
                 clients[fd]->setResponse(response);
                 // poll автоматически увидит, что POLLOUT уже стоит, и вызовет handleWrite

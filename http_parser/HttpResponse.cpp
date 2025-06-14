@@ -31,7 +31,7 @@ std::string HttpResponse::buildResponse() const {
     return response_ss.str();
 }
 
-HttpResponse handleHttpRequest(const std::string& raw_request) { // Это надо заменить на RequestHandler.cpp
+HttpResponse handleHttpRequest(const std::string& raw_request) {
     HttpRequest req(raw_request);
     HttpResponse res;
 
