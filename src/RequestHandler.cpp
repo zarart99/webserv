@@ -1,9 +1,10 @@
 #include "RequestHandler.hpp"
-#include "../conf_parser/ConfigParser.hpp"
+#include "ConfigParser.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
 
 RequestHandler::RequestHandler(ConfigParser &config) : _config(config) {}
+
 RequestHandler::~RequestHandler() {}
 
 HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serverPort, const std::string &serverHost)
@@ -16,6 +17,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
     {
         server_config = _findServerConfig(serverPort, serverHost);
 
+        // Проверяем, 400
         if (!server_config)
         {
             return _createErrorResponse(400, NULL);
@@ -23,12 +25,16 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 
         location_config = _findLocationFor(*server_config, request.getUri());
 
+        // Проверяем, 404
+
         if (!location_config)
         {
             return _createErrorResponse(404, server_config);
         }
 
-        size_t limit_in_bytes = server_config->client_max_body_sizeDef;
+        // Проверяем, 413
+
+        size_t limit_in_bytes = location_config->client_max_body_size;
         size_t content_length = request.getContentLength();
         if (limit_in_bytes > 0 && content_length > limit_in_bytes)
         {
@@ -47,6 +53,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
                     break;
                 }
             }
+            // Если метод не разрешен, возвращаем 405
             if (!method_is_allowed)
             {
                 return _createErrorResponse(405, server_config);
@@ -69,20 +76,18 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
     catch (const std::exception &e)
     {
         std::cerr << "Caught exception: " << e.what() << std::endl;
-    
+
         int statusCode = 500;
 
         std::string error_message = e.what();
         std::stringstream ss(error_message);
-   
+
         ss >> statusCode; // Если в начале строки не число, statusCode останется 500
-    
+
         return _createErrorResponse(statusCode, server_config);
-    
     }
 
-    return _createErrorResponse(501, server_config);
-
+    return _createErrorResponse(501, server_config); // Если метод не реализован, возвращаем 501 Not Implemented
 }
 
 HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
@@ -136,10 +141,9 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
     std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
 
-    
     HttpResponse response;
     response.setStatusCode(200);
-    // TODO: 
+    // TODO:
     response.addHeader("Content-Type", "text/plain"); // Миш, я тут хз как определять MIME-тип. Пока хардкод
     response.setBody(body);
     return response;
@@ -166,7 +170,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     file.close();
 
     HttpResponse response;
-    response.setStatusCode(201);// Created
+    response.setStatusCode(201); // Created
     response.addHeader("Location", path);
     return response;
 }
@@ -217,34 +221,43 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerCo
             }
         }
     }
+    return response;
 }
 
-const ServerConfig* RequestHandler::_findServerConfig(int port, const std::string& host) const {
-    const std::vector<ServerConfig>& servers = _config.getServers(); //Миш, мне тут нужен геттер типа return this->_configServ
-    const ServerConfig* default_server_for_port = NULL;
+const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string &host) const
+{
+    const std::vector<ServerConfig> &servers = _config.getServers(); // Миш, мне тут нужен геттер типа return this->_configServ
+    const ServerConfig *default_server_for_port = NULL;
 
-    for (size_t i = 0; i < servers.size(); ++i) {
+    for (size_t i = 0; i < servers.size(); ++i)
+    {
         bool port_match = false;
         // Проверяем, слушает ли текущий сервер нужный порт
-        for (size_t j = 0; j < servers[i].listen.size(); ++j) {
-            if (servers[i].listen[j].port == port) {
+        for (size_t j = 0; j < servers[i].listen.size(); ++j)
+        {
+            if (servers[i].listen[j].port == port)
+            {
                 port_match = true;
                 // Если это первый сервер, который мы нашли для этого порта,
                 // запоминаем его как дефолтный на случай, если не найдем точного совпадения по хосту.
-                if (!default_server_for_port) {
+                if (!default_server_for_port)
+                {
                     default_server_for_port = &servers[i];
                 }
                 break;
             }
         }
 
-        if (!port_match) {
+        if (!port_match)
+        {
             continue; // Этот сервер не на нашем порту, пропускаем
         }
 
         // Если порт совпал, проверяем server_name
-        for (size_t j = 0; j < servers[i].server_name.size(); ++j) {
-            if (servers[i].server_name[j] == host) {
+        for (size_t j = 0; j < servers[i].server_name.size(); ++j)
+        {
+            if (servers[i].server_name[j] == host)
+            {
                 return &servers[i]; // Нашли точное совпадение! Возвращаем его.
             }
         }
@@ -259,19 +272,23 @@ const ServerConfig* RequestHandler::_findServerConfig(int port, const std::strin
 // Логика:
 // Ищем локацию, чей префикс длиннее всего совпадает с началом URI.
 // Например, для URI "/images/cat/avatar.jpg", префикс "/images/cat/" лучше, чем "/images/".
-const LocationStruct* RequestHandler::_findLocationFor(const ServerConfig& server, const std::string& uri) const {
-    const LocationStruct* best_match = NULL;
+const LocationStruct *RequestHandler::_findLocationFor(const ServerConfig &server, const std::string &uri) const
+{
+    const LocationStruct *best_match = NULL;
     size_t max_len = 0;
 
-    for (size_t i = 0; i < server.location.size(); ++i) {
-        const std::string& prefix = server.location[i].prefix;
-        
+    for (size_t i = 0; i < server.location.size(); ++i)
+    {
+        const std::string &prefix = server.location[i].prefix;
+
         // Проверяем, что URI начинается с префикса локации.
         // rfind(prefix, 0) == 0 - это эффективный способ проверить "startsWith".
-        if (uri.rfind(prefix, 0) == 0) {
+        if (uri.rfind(prefix, 0) == 0)
+        {
             // Если длина текущего префикса больше, чем у лучшего найденного ранее,
             // то это новое лучшее совпадение.
-            if (prefix.length() > max_len) {
+            if (prefix.length() > max_len)
+            {
                 max_len = prefix.length();
                 best_match = &server.location[i];
             }

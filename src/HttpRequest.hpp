@@ -21,6 +21,8 @@ public:
     const std::map<std::string, std::string> &getHeaders() const;
     std::string getBody() const;
     bool isValid() const;
+    size_t getContentLength() const;
+
 
 private:
     std::string _method;

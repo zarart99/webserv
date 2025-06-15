@@ -6,28 +6,28 @@
 #include <string>
 #include <sys/poll.h>
 #include "client.hpp"
-#include "config.hpp" // Структура ServerConfig/LocationStruct (от Участника 3)
+#include "ConfigParser.hpp"
+#include "RequestHandler.hpp"
 
-class Server {
+class Server
+{
 public:
-    Server(const std::vector<ServerConfig>& configs);
+    Server(ConfigParser &parser);
     ~Server();
 
     void run();
 
 private:
-    std::vector<struct pollfd> fds;                // Все fd: listen + клиенты
-    std::map<int, Client*>     clients;            // fd -> Client*
-    std::map<int, ServerConfig> listenConfigs;     // listen_fd -> ServerConfig
-
-    void initListeners(const std::vector<ServerConfig>& configs);
+    void initListeners(const std::vector<ServerConfig> &);
+    void handlePollEvents();
     void acceptNewClient(int listen_fd);
     void removeClient(int client_fd);
-    void handlePollEvents();
 
-    // Запрещаем копирование
-    Server(const Server&);
-    Server& operator=(const Server&);
+    ConfigParser &cfg;                              
+    const std::vector<ServerConfig> &server_configs;
+
+    std::vector<struct pollfd> fds;
+    std::map<int, ServerConfig> listenConfigs;
+    std::map<int, Client *> clients;
 };
-
-#endif
+#endif // SERVER_HPP

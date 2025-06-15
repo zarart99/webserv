@@ -8,21 +8,28 @@
 #include <cstdio>
 #include "HttpResponse.hpp"
 
-Server::Server(const std::vector<ServerConfig>& configs) {
-    initListeners(configs);
+Server::Server(ConfigParser &parser)
+    : cfg(parser),
+      server_configs(parser.getServers())
+{
+    initListeners(server_configs);
 }
 
-Server::~Server() {
+Server::~Server()
+{
     for (size_t i = 0; i < fds.size(); ++i)
         close(fds[i].fd);
-    for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it)
+    for (std::map<int, Client *>::iterator it = clients.begin(); it != clients.end(); ++it)
         delete it->second;
 }
 
-void Server::initListeners(const std::vector<ServerConfig>& configs) {
-    for (size_t i = 0; i < configs.size(); ++i) {
-        const std::vector<ListenStruct>& listenVec = configs[i].listen;
-        for (size_t j = 0; j < listenVec.size(); ++j) {
+void Server::initListeners(const std::vector<ServerConfig> &configs)
+{
+    for (size_t i = 0; i < configs.size(); ++i)
+    {
+        const std::vector<ListenStruct> &listenVec = configs[i].listen;
+        for (size_t j = 0; j < listenVec.size(); ++j)
+        {
             int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
             fcntl(listen_fd, F_SETFL, O_NONBLOCK);
 
@@ -31,7 +38,7 @@ void Server::initListeners(const std::vector<ServerConfig>& configs) {
             addr.sin_port = htons(listenVec[j].port);
             addr.sin_addr.s_addr = inet_addr(listenVec[j].ip.c_str());
 
-            bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr));
+            bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr));
             listen(listen_fd, 100);
 
             struct pollfd pfd;
@@ -45,79 +52,118 @@ void Server::initListeners(const std::vector<ServerConfig>& configs) {
     }
 }
 
-void Server::run() {
-    while (true) {
-        try {
+void Server::run()
+{
+    while (true)
+    {
+        try
+        {
             int ret = poll(&fds[0], fds.size(), 1000); // 1 сек
-            if (ret < 0) { perror("poll"); break; }
+            if (ret < 0)
+            {
+                perror("poll");
+                break;
+            }
             handlePollEvents();
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception &e)
+        {
             std::cerr << "Error: " << e.what() << std::endl;
-        } catch (...) {
+        }
+        catch (...)
+        {
             std::cerr << "Unknown error occurred" << std::endl;
         }
     }
 }
 
-void Server::handlePollEvents() {
-    for (size_t i = 0; i < fds.size(); ++i) {
+void Server::handlePollEvents()
+{
+    for (size_t i = 0; i < fds.size(); ++i)
+    {
         int fd = fds[i].fd;
-        // 1. Новое подключение
-        if (fds[i].revents & POLLIN && listenConfigs.count(fd)) {
+
+        /* Новое соединение */
+        if ((fds[i].revents & POLLIN) && listenConfigs.count(fd))
+        {
             acceptNewClient(fd);
-            std::cout << "New client connected: fd " << fd << std::endl;
             continue;
         }
 
-        if (fds[i].revents & POLLIN && clients.count(fd)) {
-            clients[fd]->handleRead();
+        /* Данные от существующего клиента */
+        if ((fds[i].revents & POLLIN) && clients.count(fd))
+        {
+            clients[fd]->handleRead(); // ← вернули!
 
-            // Если буфер запроса содержит полный запрос и нет ответа — сгенерировать ответ!
-            if (clients[fd]->isRequestReady() && clients[fd]->getWriteBuffer().empty()) {
-                HttpResponse httpResponse = handleHttpRequest(clients[fd]->getReadBuffer()); // Саша, заменить надо на RequestHandler.cpp
-                std::string response = httpResponse.buildResponse();
-                clients[fd]->setResponse(response);
-                // poll автоматически увидит, что POLLOUT уже стоит, и вызовет handleWrite
+            if (clients[fd]->isRequestReady() &&
+                clients[fd]->getWriteBuffer().empty())
+            {
+                /* 1. создаём HttpRequest */
+                HttpRequest req(clients[fd]->getReadBuffer());
+
+                /* 2. порт и Host */
+                int port = clients[fd]->getConfig()->listen[0].port;
+                std::string host;
+                if (req.getHeaders().count("host"))
+                    host = req.getHeaders().at("host");
+
+                /* 3. RequestHandler */
+                RequestHandler handler(cfg);
+                HttpResponse resp = handler.handleRequest(req, port, host);
+
+                /* 4. кладём готовый ответ */
+                clients[fd]->setResponse(resp.buildResponse());
             }
         }
-        if (fds[i].revents & POLLOUT && clients.count(fds[i].fd)) {
-            clients[fds[i].fd]->handleWrite();
-        }
+
+        /* запись в сокет */
+        if ((fds[i].revents & POLLOUT) && clients.count(fd))
+            clients[fd]->handleWrite();
     }
-    for (size_t i = 0; i < fds.size(); ) {
+    /* удаляем завершённых клиентов … */
+
+    for (size_t i = 0; i < fds.size();)
+    {
         int fd = fds[i].fd;
-        if (clients.count(fd) && clients[fd]->isDone()) {
+        if (clients.count(fd) && clients[fd]->isDone())
+        {
             removeClient(fd);
-        } else {
+        }
+        else
+        {
             ++i;
         }
     }
 }
 
-void Server::acceptNewClient(int listen_fd) {
+void Server::acceptNewClient(int listen_fd)
+{
     int client_fd = accept(listen_fd, NULL, NULL);
-    if (client_fd < 0) return;
+    if (client_fd < 0)
+        return;
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
-    struct pollfd pfd = { client_fd, POLLIN | POLLOUT, 0 };
+    struct pollfd pfd = {client_fd, POLLIN | POLLOUT, 0};
     fds.push_back(pfd);
 
-    ServerConfig* config = &listenConfigs[listen_fd];
+    ServerConfig *config = &listenConfigs[listen_fd];
     clients[client_fd] = new Client(client_fd, config);
 }
 
-void Server::removeClient(int client_fd) {
+void Server::removeClient(int client_fd)
+{
     close(client_fd);
     delete clients[client_fd];
     clients.erase(client_fd);
 
-    for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it) {
-        if (it->fd == client_fd) {
+    for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it)
+    {
+        if (it->fd == client_fd)
+        {
             fds.erase(it);
             break;
         }
     }
 }
-
 
 // #include <iostream>
 // #include <vector>

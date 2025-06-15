@@ -14,28 +14,6 @@ static std::string trim(const std::string &s)
 }
 
 bool HttpRequest::isValid() const {
-    // if (_method.empty() || _uri.empty() || _http_version.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: Missing required fields in request");
-    // }
-
-    // if (_headers.find("Host") == _headers.end())
-    // {
-    //     throw std::runtime_error("400 Bad Request: Missing 'Host' header");
-    // // }
-
-    // if (_method == "POST" && _body.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: POST request must have a body");
-    // }
-    // if (_method == "DELETE" && _uri.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: DELETE request must specify a URI");
-    // }
-    // if (_method == "GET" && !_body.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: GET request must not have a body");
-    // }
     return true;
 }
 
@@ -137,6 +115,27 @@ void HttpRequest::_parseBody(std::stringstream &request_stream)
     {
         _body.assign(std::istreambuf_iterator<char>(request_stream), std::istreambuf_iterator<char>());
     }
+}
+
+size_t HttpRequest::getContentLength() const {
+    // Ищем заголовок "content-length" (ключи у нас уже в нижнем регистре)
+    std::map<std::string, std::string>::const_iterator it = _headers.find("content-length");
+
+    // Если заголовок не найден, возвращаем 0
+    if (it == _headers.end()) {
+        return 0;
+    }
+
+    // Конвертируем значение заголовка из строки в число
+    char* end;
+    long length = std::strtol(it->second.c_str(), &end, 10);
+
+    // Проверяем на ошибки конвертации или отрицательные значения
+    if (*end != '\0' || length < 0) {
+        return 0; // Некорректное значение
+    }
+    
+    return static_cast<size_t>(length);
 }
 
 
