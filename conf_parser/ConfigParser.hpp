@@ -20,7 +20,7 @@ struct ListenStruct
 struct CgiStruct
 {
 	std::string extension;
-	std::string interpreter;
+	std::string pathInterpreter;
 	size_t timeout;
 };
 
@@ -71,7 +71,7 @@ class ConfigParser
 
 		ListenStruct parseListen(std::string& str);
 		int findPort(std::string& str);
-		bool checkValideIP(const std::string& str);
+		bool checkValideIP(std::string& str);
 
 		std::vector<std::string> findServerName(std::string& str);
 		std::string findRoot(std::string& str);
@@ -92,7 +92,7 @@ class ConfigParser
 //		void validateServer(const ServerConfig& server);
 //		void validateLocation(const LocationStruct& location);
 //		void check port(void);
-//		void printCongig();
+//		void printConfig(void);
 		const std::vector<ServerConfig>& getServers(void) const;
 		size_t getServerCount(void);
 	private:

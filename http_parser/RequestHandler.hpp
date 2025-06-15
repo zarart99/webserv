@@ -3,7 +3,7 @@
 
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
-#include "ConfigParser.hpp" 
+#include "../conf_parser/ConfigParser.hpp"
 
 class RequestHandler {
 public:

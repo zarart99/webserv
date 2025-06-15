@@ -1,5 +1,5 @@
 #include "RequestHandler.hpp"
-#include "../src/ConfigParser.hpp"
+#include "../conf_parser/ConfigParser.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
 

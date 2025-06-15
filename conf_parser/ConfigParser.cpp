@@ -1,6 +1,9 @@
 #include "ConfigParser.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
+#include <cstdlib>
+#include <climits>
+
 ConfigParser::ConfigParser(void) {}
 
 ConfigParser::ConfigParser(ConfigParser const & src)
@@ -59,7 +62,7 @@ std::vector<std::string> ConfigParser::splitWhitespace(std::string &str)
 
 void ConfigParser::trimSemicolon(std::string& str)
 {
-	if (!str.empty() && str.back() == ';')
+	if (!str.empty() && str[str.size() - 1] == ';')
 		str.erase(str.size() - 1);
 }
 
@@ -182,27 +185,18 @@ ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
 
 int ConfigParser::findPort(std::string& str)
 {
-	size_t pos = 0;
-	int port = 0;
-	try 
-	{
-		port = std::stoi(str, &pos);
-		if (port < 1 || port > 65535)
-			throw std::runtime_error("Error: Invalide port!");
-		if (pos != str.size())
-			throw std::runtime_error("Error: Invalide port!");
-	}
-	catch (const std::exception& e)
-	{
+	char* endptr;
+	errno = 0;
+	long port = 0;
+	port = std::strtol(str.c_str(), &endptr, 10);
+	if (errno == ERANGE || *endptr != '\0' || port < 1 || port > 65535)
 		throw std::runtime_error("Error: Invalide port!");
-	}
-	return port;
+	return static_cast<int>(port);
 }
 
-bool ConfigParser::checkValideIP(const std::string& str)
+bool ConfigParser::checkValideIP(std::string& str)
 {
 	std::vector<std::string> strs;
-	size_t pos = 0;
 	strs = split(str , '.');
 
 	if (strs.size() != 4)
@@ -216,16 +210,11 @@ bool ConfigParser::checkValideIP(const std::string& str)
 		if (strs[i].size() > 1 && strs[i][0] == '0') //Разве блоки не могут начинаться с 0?
 			return false;
 
-		try 
-		{
-			int value = std::stoi(strs[i], &pos);
-			if (value < 0 || value > 255 || pos != strs[i].size())
-				return false;
-		}
-		catch (const std::exception &e)
-		{
+		char* endptr;
+		errno = 0;
+		long value = std::strtol(strs[i].c_str(), &endptr, 10);
+		if (value < 0 || value > 255 || errno == ERANGE || *endptr != '\0')
 			return false;
-		}
 	}
 	return true;
 }
@@ -236,7 +225,7 @@ ListenStruct ConfigParser::parseListen(std::string& str)
 	std::vector<std::string> firstSplit;
 	std::vector<std::string> secondeSplit;
 
-	firstSplit = split(str, ' ');//А если табуляция?
+	firstSplit = splitWhitespace(str);
 	if (firstSplit.size() != 2)
 		throw std::runtime_error("Error: invalid listen directive format!");
 	secondeSplit = split(firstSplit[1], ':');
@@ -263,11 +252,11 @@ std::vector<std::string> ConfigParser::findServerName(std::string& str)
 {
 	std::vector<std::string> names;
 	std::vector<std::string> strs;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() < 2)
 		throw std::runtime_error("Invalid root directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[strs.size() - 1]);
+	if (strs[strs.size() - 1].empty())
 		throw std::runtime_error("Invalid root directiv!");
 	for (size_t i = 1; i < strs.size(); i++)
 	{
@@ -279,11 +268,11 @@ std::vector<std::string> ConfigParser::findServerName(std::string& str)
 std::string ConfigParser::findRoot(std::string& str)
 {
 	std::vector<std::string> strs;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() != 2)
 		throw std::runtime_error("Invalid root directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[1]);
+	if (strs[1].empty())
 		throw std::runtime_error("Invalid root directiv!");
 	return strs[1];
 }
@@ -291,16 +280,18 @@ std::string ConfigParser::findRoot(std::string& str)
 bool ConfigParser::findAutoindex(std::string& str)
 {
 	std::vector<std::string> strs;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() != 2)
 		throw std::runtime_error("Invalid Autoindex directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[1]);
+	if (strs[1].empty())
 		throw std::runtime_error("Invalid Autoindex directiv!");
 	if (strs[1] == "off")
 		return false;
 	else if (strs[1] == "on")
 		return true;
+	else
+		throw std::runtime_error("Invalid Autoindex value!");
 	return false;
 }
 
@@ -309,16 +300,15 @@ size_t ConfigParser::findMaxBody(std::string &str)
 	char suffix;
 	size_t multiplier = 1;
 	size_t value = 0;
-	size_t pos = 0;
 	size_t maxSize = 2147483648;
 	std::vector<std::string> strs;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() != 2)
 		throw std::runtime_error("Invalid directiv client_max_body_size");
 	trimSemicolon(strs[1]);
 	if (strs[1].empty())
 		throw std::runtime_error("Invalid directiv client_max_body_size");
-	suffix = strs[1].back();
+	suffix = strs[1][strs[1].size() - 1];
 	if (!isdigit(suffix))
 	{
 		if (suffix == 'B' || suffix == 'b')//Мультипликатор для битов
@@ -331,20 +321,16 @@ size_t ConfigParser::findMaxBody(std::string &str)
 			multiplier = 1024 * 1024 * 1024;
 		else
 			throw std::runtime_error("Invalid client_max_body_size");
-		strs[1].pop_back();
+		strs[1].erase(strs[1].size() - 1);
 		if (strs[1].empty())
 			throw std::runtime_error("Invalid directiv client_max_body_size");
 	}
-	try
-	{
-		value = std::stoul(strs[1], &pos);
-		if (pos != strs[1].size())
-			throw std::runtime_error("Invalid client_max_body_size");
-	}
-	catch(const std::exception& e)
-	{
+	char* endptr;
+	errno = 0;
+	unsigned long temp = std::strtoul(strs[1].c_str(), &endptr, 10);
+	if (errno == ERANGE || *endptr != '\0')
 		throw std::runtime_error("Invalid client_max_body_size");
-	}
+	value = static_cast<size_t>(temp);
 	if (value > (maxSize / multiplier))
 		throw std::runtime_error("Invalid client_max_body_size");
 	return (value * multiplier);
@@ -354,11 +340,11 @@ std::vector<std::string> ConfigParser::findIndex(std::string& str)
 {
 	std::vector<std::string> index;
 	std::vector<std::string> strs;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() < 2)
 		throw std::runtime_error("Invalid index directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[strs.size() - 1]);
+	if (strs[strs.size() - 1].empty())
 		throw std::runtime_error("Invalid index directiv!");
 	for (size_t i = 1; i < strs.size(); i++)
 	{
@@ -370,28 +356,21 @@ std::vector<std::string> ConfigParser::findIndex(std::string& str)
 void ConfigParser::appendErrorPage(std::string& str, std::map<int, std::string> &errors)
 {
 	std::vector<std::string> strs;
-
-	size_t pos = 0;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() < 3)
 		throw std::runtime_error("Invalid error_page directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[strs.size() - 1]);
+	if (strs[strs.size() - 1].empty())
 		throw std::runtime_error("Invalid error_page directiv!");
-	std::string page = strs.back();
+	std::string page = strs[strs.size() - 1];
 	for (size_t i = 1; i < strs.size() - 1 ; i++)
 	{
-		try
-		{
-			int code = std::stoi(strs[i], &pos);
-			if (code < 100 || code > 599 || pos != strs[i].size())
-				throw std::runtime_error("Invalid error_page format!");
-			errors[code] = page;
-		}
-		catch (const std::exception &e)
-		{
+		char* endptr;
+		errno = 0;
+		long code = std::strtol(strs[i].c_str(), &endptr, 10);
+		if (code < 100 || code > 599 || *endptr != '\0' || errno == ERANGE)
 			throw std::runtime_error("Invalid error_page format!");
-		}
+		errors[static_cast<int>(code)] = page;
 	}
 }
 
@@ -399,9 +378,9 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 {
 	LocationStruct location;
 
-	location.autondex = false; //Дефолтная настройка
-	location.client_max_body_sizeDef = 1024 * 1024; //Дефолтная настройка
-
+	location.autoindex = false; //Дефолтная настройка
+	location.client_max_body_size = 1024 * 1024; //Дефолтная настройка
+	location.upload_dir = "/tmp/uplads"; //Дефолтная настройка
 	if (!strs.empty())
 		location.prefix = findPrefix(strs[0]);
 	for (size_t i = 1; i < strs.size(); i++)
@@ -421,6 +400,10 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 			location.client_max_body_size = findMaxBody(line);
 		else if (line.find("error_page") == 0)
 			appendErrorPage(line, location.error_page);
+		else if (line.find("upload_dir") == 0)
+			location.upload_dir = findUploadDir(line);
+		else if (line.find("cgi") == 0)
+			parseCgi(line, location.cgi);
 		else
 			throw std::runtime_error("Error: Unknown directive in location!");
 	}
@@ -430,7 +413,7 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 std::string ConfigParser::findPrefix(std::string& str)
 {
 	std::vector<std::string> strs;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() != 3)
 		throw std::runtime_error("Error: Invalid location format!");
 	return strs[1];
@@ -440,11 +423,11 @@ std::vector<std::string> ConfigParser::findMethods(std::string& str)
 {
 	std::vector<std::string> strs;
 	std::vector<std::string> methods;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() < 2)
 		throw std::runtime_error("Error: Invalid allow_methods directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[strs.size() - 1]);
+	if (strs[strs.size() - 1].empty())
 		throw std::runtime_error("Invalid allow_methods directiv!");
 	for (size_t i = 1; i < strs.size(); i++)
 	{
@@ -463,25 +446,19 @@ std::map<int, std::string> ConfigParser::findRedir(std::string& str)
 {
 	std::vector<std::string> strs;
 	std::map<int, std::string> redirect;
-	size_t pos = 0;
-	strs = split(str, ' ');
+	strs = splitWhitespace(str);
 	if (strs.size() != 3)
 		throw std::runtime_error("Error: Invalid redirect directiv!");
-	trimSemicolon(strs.back());
-	if (strs.back().empty())
+	trimSemicolon(strs[2]);
+	if (strs[2].empty())
 		throw std::runtime_error("Invalid redirect format!");
 	{
-		try
-		{
-			int code = std::stoi(strs[1], &pos);
-			if (code < 300 || code > 399 || pos != strs[1].size())
-				throw std::runtime_error("Invalid redirect code!");
-			redirect[code] = strs[2];
-		}
-		catch (const std::exception &e)
-		{
-			throw std::runtime_error("Invalid redirect format!");
-		}
+		char* endptr;
+		errno = 0;
+		long code = std::strtol(strs[1].c_str(), &endptr, 10);
+		if ( *endptr != '\0' || errno == ERANGE || code < 300 || code > 399)
+			throw std::runtime_error("Invalid redirect code!");
+		redirect[static_cast<int>(code)] = strs[2];
 	}
 	return redirect;
 }
@@ -498,12 +475,42 @@ size_t ConfigParser::getServerCount(void)
 
 std::string ConfigParser::findUploadDir(std::string& str)
 {
-
+	std::vector<std::string> strs;
+	strs = splitWhitespace(str);
+	if (strs.size() != 2)
+		throw std::runtime_error("Invalid upload_dir directiv!");
+	trimSemicolon(strs[1]);
+	if (strs[1].empty())
+		throw std::runtime_error("Invalid upload_dir directiv!");
+	return strs[1];
 }
 
-void ConfigParser::parseCgi(std::string &str, std::map<std::string, CgiStruct> &cgi)
+void ConfigParser::parseCgi(std::string &str, std::map<std::string, CgiStruct> &cgi)//Парсер для формата cgi .php /usr/bin/php-cgi 50
 {
+	std::vector<std::string> strs;
+	strs = splitWhitespace(str);
 
+	if (strs.size() < 3 || strs.size() > 4)
+		throw std::runtime_error("Invalid CGI directiv format!");
+	trimSemicolon(strs[strs.size() - 1]);
+	if (strs[strs.size() - 1].empty())
+		throw std::runtime_error("Invalid CGI directiv directiv!");
+	CgiStruct cgiTemp;
+	cgiTemp.extension = strs[1];
+	cgiTemp.pathInterpreter = strs[2];
+
+	if (strs.size() == 4)
+	{
+		char* endptr;
+		errno = 0;
+		unsigned long temp = std::strtoul(strs[3].c_str(), &endptr, 10);
+		if (*endptr != '\0' || errno == ERANGE)
+			throw std::runtime_error("Invalide CGI timeout!");
+		cgiTemp.timeout = static_cast<size_t>(temp);
+	}
+	else
+		cgiTemp.timeout = 30;
+	cgi[strs[1]] = cgiTemp;
 }
 
 //		void validateConfig(void);
@@ -511,4 +518,53 @@ void ConfigParser::parseCgi(std::string &str, std::map<std::string, CgiStruct> &
 //		void validateServer(const ServerConfig& server);
 //		void validateLocation(const LocationStruct& location);
 //		void check port(void);
-//		void printCongig(void);
+// void ConfigParser::printConfig(void)
+// {
+// 	std::cout << "Config file for Webserv" << std::endl;
+// 	std::cout << "Nomber of servers" << _configServ.size() << std::endl;
+
+// 	for (size_t i = 0; i < _configServ.size(); i++)
+// 	{
+// 		ServerConfig& server = _configServ[i];
+// 		std::cout << "--- Server" << (i + 1) << " ---" << std::endl;
+// 		std::cout << "Listen:" << std::endl;
+// 		for (size_t j = 0; j < server.listen.size(); j++)
+// 		{
+// 			std::cout << " " << server.listen[j].ip << ":" << server.listen[j].port << std::endl;
+// 		}
+// 		if (!server.server_name.empty())
+// 		{
+// 			std::cout << "Server name: ";
+// 			for (size_t j = 0; j < server.server_name.size(); j++)
+// 			{
+// 				std::cout << server.server_name[j];
+// 				if (j < server.server_name.size() - 1)
+// 					std::cout << ", ";
+// 			}
+// 			std::cout << std::endl;
+// 		}
+// 		if (!server.rootDef.empty())
+// 			std::cout << "Root default: " << server.rootDef << std::endl;
+// 		if (!server.indexDef.empty())
+// 		{
+// 			std::cout << "Index default: ";
+// 			for (size_t j = 0; j < server.indexDef.size(); j++)
+// 			{
+// 				std::cout << server.indexDef[j];
+// 				if (j < server.indexDef.size() - 1)
+// 					std::cout << ", ";
+// 			}
+// 			std::cout << std::endl;
+// 		}
+// 		std::cout << "Autoindex default: " << (server.autoindexDef ? "on" : "off") << std::endl;
+// 		std::cout << "Client max body size default: " << server.client_max_body_sizeDef << " bytes" << std::endl; 
+// 		if (!server.error_pageDef.empty())
+// 		{
+// 			std::cout << "Error page default: " << std::endl;
+// 			for (std::map<int, std::string>::iterator it = server.error_pageDef.begin(); it != server.error_pageDef.end(); ++it)
+// 			{
+				
+// 			}
+// 		}
+// 	}
+// }
