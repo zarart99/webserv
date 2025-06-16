@@ -59,6 +59,7 @@ void Server::run() {
 }
 
 void Server::handlePollEvents() {
+    time_t currentTime = time(NULL);
     for (size_t i = 0; i < fds.size(); ++i) {
         int fd = fds[i].fd;
         // 1. Новое подключение
@@ -70,6 +71,7 @@ void Server::handlePollEvents() {
 
         if (fds[i].revents & POLLIN && clients.count(fd)) {
             clients[fd]->handleRead();
+            clientLastActivity[fd] = currentTime;
 
             // Если буфер запроса содержит полный запрос и нет ответа — сгенерировать ответ!
             if (clients[fd]->isRequestReady() && clients[fd]->getWriteBuffer().empty()) {
@@ -81,11 +83,13 @@ void Server::handlePollEvents() {
         }
         if (fds[i].revents & POLLOUT && clients.count(fds[i].fd)) {
             clients[fds[i].fd]->handleWrite();
+            clientLastActivity[fds[i].fd] = currentTime;
         }
     }
     for (size_t i = 0; i < fds.size(); ) {
         int fd = fds[i].fd;
-        if (clients.count(fd) && clients[fd]->isDone()) {
+        if (clients.count(fd) && clients[fd]->isDone() || 
+        (currentTime - clientLastActivity[fd] > CLIENT_TIMEOUT)) {
             removeClient(fd);
         } else {
             ++i;
@@ -102,12 +106,14 @@ void Server::acceptNewClient(int listen_fd) {
 
     ServerConfig* config = &listenConfigs[listen_fd];
     clients[client_fd] = new Client(client_fd, config);
+    clientLastActivity[client_fd] = time(NULL);
 }
 
 void Server::removeClient(int client_fd) {
     close(client_fd);
     delete clients[client_fd];
     clients.erase(client_fd);
+    clientLastActivity.erase(client_fd);
 
     for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it) {
         if (it->fd == client_fd) {

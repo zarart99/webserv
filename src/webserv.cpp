@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 
     std::vector<ServerConfig> configs;
     try {
-        configs = parse_config(config_path);
+        configs = parse_config(config_path); // Миша здесь подключает конфиг
         if (configs.empty()) {
             std::cerr << "No servers in config. Exiting." << std::endl;
             return 1;
