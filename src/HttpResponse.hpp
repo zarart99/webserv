@@ -21,7 +21,7 @@ public:
 private:
     int _statusCode;
     std::string _statusMessage;
-    static std::map<int, std::string> _statusMessages;    
+    static std::map<int, std::string> _statusMessages;
     std::map<std::string, std::string> _headers;
     std::string _body;
 };

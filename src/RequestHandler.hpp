@@ -19,7 +19,7 @@ private:
     HttpResponse _handlePost(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
     HttpResponse _handleDelete(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
 
-    HttpResponse _createErrorResponse(int statusCode, const ServerConfig* server);
+    HttpResponse _createErrorResponse(int statusCode, const ServerConfig* server, const std::vector<std::string>* allowed_methods = NULL);
     const ServerConfig* _findServerConfig(int port, const std::string& host) const;
     const LocationStruct* _findLocationFor(const ServerConfig& server, const std::string& uri) const;
 };
