@@ -17,8 +17,8 @@
 - [x] Формирование стартовой строки `HTTP/1.1 <code> <message>\r\n`  
 - [x] Авто-добавление `Content-Length`, если есть тело  
 - [x] Добавление заголовков через `addHeader()`  
-- [ ] Для 405 Method Not Allowed добавить заголовок `Allow: GET, POST, DELETE`  
-- [ ] Учесть HTTP-версию в ответе (505 для неподдерживаемых)  
+- [x] Для 405 Method Not Allowed добавить заголовок `Allow: GET, POST, DELETE`
+- [x] Учесть HTTP-версию в ответе (505 для неподдерживаемых)
 
 ### 3. RequestHandler (src/RequestHandler.cpp/.hpp)  
 #### GET  

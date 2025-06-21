@@ -56,7 +56,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
             // Если метод не разрешен, возвращаем 405
             if (!method_is_allowed)
             {
-                return _createErrorResponse(405, server_config);
+                return _createErrorResponse(405, server_config, &allowed_methods);
             }
         }
 
@@ -199,11 +199,22 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
     return response;
 }
 
-HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server)
+HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string>* allowed_methods)
 {
     HttpResponse response;
     response.setStatusCode(statusCode);
     response.addHeader("Content-Type", "text/html; charset=utf-8"); // тут нужно уточнить, какой тип контента возвращаем
+    if (statusCode == 405 && allowed_methods && !allowed_methods->empty())
+    {
+        std::string allow_header;
+        for (size_t i = 0; i < allowed_methods->size(); ++i)
+        {
+            if (i > 0)
+                allow_header += ", ";
+            allow_header += (*allowed_methods)[i];
+        }
+        response.addHeader("Allow", allow_header);
+    }
 
     std::string body;
     // Пытаемся найти кастомную страницу ошибки, если конфиг сервера доступен
