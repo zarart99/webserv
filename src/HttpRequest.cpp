@@ -1,4 +1,5 @@
 #include "HttpRequest.hpp"
+#include <cstdlib>
 
 
 static std::string trim(const std::string &s)
@@ -98,22 +99,45 @@ void HttpRequest::_parseHeaders(std::stringstream &request_stream)
         std::string::size_type colon_pos = header_line.find(':');
         if (colon_pos == std::string::npos)
         {
-            continue;
+            throw std::runtime_error("400 Bad Request: malformed header");
         }
 
-        std::string key = header_line.substr(0, colon_pos);
-        std::string value = header_line.substr(colon_pos + 1);
+        std::string key = trim(header_line.substr(0, colon_pos));
+        std::string value = trim(header_line.substr(colon_pos + 1));
 
-        _headers[toLower(trim(key))] = trim(value);
+        // Проверяем корректность имени заголовка (только буквы, цифры и -)
+        if (key.empty() || key.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != std::string::npos)
+        {
+            throw std::runtime_error("400 Bad Request: invalid header name");
+        }
+
+        std::string lower_key = toLower(key);
+        if (_headers.count(lower_key))
+        {
+            throw std::runtime_error("400 Bad Request: duplicate header");
+        }
+
+        _headers[lower_key] = value;
+    }
+
+    if (_http_version == "HTTP/1.1" && !_headers.count("host"))
+    {
+        throw std::runtime_error("400 Bad Request: Host header required");
     }
 }
 
 void HttpRequest::_parseBody(std::stringstream &request_stream)
 {
- 
+
     if (!request_stream.eof())
     {
         _body.assign(std::istreambuf_iterator<char>(request_stream), std::istreambuf_iterator<char>());
+    }
+
+    size_t declared_length = getContentLength();
+    if (declared_length > 0 && declared_length != _body.size())
+    {
+        throw std::runtime_error("400 Bad Request: Content-Length mismatch");
     }
 }
 
