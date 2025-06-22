@@ -23,12 +23,17 @@ int main(int argc, char **argv)
     std::string config_path = "webserv.conf";
     if (argc == 2)
         config_path = argv[1];
+    else if (argc > 2)
+    {
+        std::cerr << "Fatal error: incorrect number of arguments" << std::endl;
+        return 1;
+    }
 
     try
     {
         /* 1. парсим конфиг */
-        ConfigParser parser;
-        parser.parseConfigFile(config_path);
+        ConfigParser parser(config_path);//Теперь парсинг конфига запускается автоматом при создании объекта
+//        parser.printConfig();//Вывод конфига , для дебагга
 
         /* 2. создаём сервер, передавая ЕМУ ссылку на парсер */
         Server server(parser);
