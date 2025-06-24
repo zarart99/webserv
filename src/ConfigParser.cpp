@@ -11,6 +11,11 @@ ConfigParser::ConfigParser(ConfigParser const & src)
 	*this = src;
 }
 
+ConfigParser::ConfigParser(std::string &str)
+{
+	parseConfigFile(str);
+}
+
 ConfigParser & ConfigParser::operator=(ConfigParser const & src)
 {
 	if (this != &src)
@@ -22,7 +27,7 @@ ConfigParser & ConfigParser::operator=(ConfigParser const & src)
 
 ConfigParser::~ConfigParser() {}
 
-void ConfigParser::trimmer(std::string & str)
+void trimmer(std::string & str)
 {
 	std::string whitespace = " \t\n\r";
 	size_t first = str.find_first_not_of(whitespace);
@@ -34,7 +39,7 @@ void ConfigParser::trimmer(std::string & str)
 	size_t last = str.find_last_not_of(whitespace);
 	str = str.substr(first, (last - first + 1));
 }
-std::vector<std::string> ConfigParser::split(std::string &str, char delimiter)
+std::vector<std::string> split(std::string &str, char delimiter)
 {
 	std::vector<std::string> strs;
 	std::string item;
@@ -47,7 +52,7 @@ std::vector<std::string> ConfigParser::split(std::string &str, char delimiter)
 	return strs;
 }
 
-std::vector<std::string> ConfigParser::splitWhitespace(std::string &str)
+std::vector<std::string> splitWhitespace(std::string &str)
 {
 	std::vector<std::string> strs;
 	std::string item;
@@ -60,7 +65,7 @@ std::vector<std::string> ConfigParser::splitWhitespace(std::string &str)
 	return strs;
 }
 
-void ConfigParser::trimSemicolon(std::string& str)
+void trimSemicolon(std::string& str)
 {
 	if (!str.empty() && str[str.size() - 1] == ';')
 		str.erase(str.size() - 1);
@@ -113,6 +118,8 @@ void ConfigParser::parseConfigFile(std::string const & fileName )
 		throw std::runtime_error("Error: too mach brace on congig file!");
 	}
 	file.close();
+	if (!validateGlobalUniqueListen())
+		throw std::runtime_error("Error: Conflicting listen between servers!");
 }
 
 ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
@@ -123,7 +130,6 @@ ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
 	int braceNb = 0;
 	serverData.autoindexDef = false; //Дефолтная настройка
 	serverData.client_max_body_sizeDef = 1024 * 1024; //Дефолтная настройка
-	serverData.upload_dirDef = "/tmp/uplads"; //Дефолтная настройка, определиться потом с финальным расположением
 	for (std::vector<std::string>::iterator it = strs.begin(); it != strs.end(); it++)
 	{
 		std::string line = *it;
@@ -158,7 +164,8 @@ ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
 			if (line.find("listen") == 0)
 			{
 				ListenStruct listen = parseListen(line);
-				serverData.listen.push_back(listen);
+				if (checkDoubleListen(serverData.listen, listen))
+					serverData.listen.push_back(listen);
 			}
 			else if (line.find("server_name") == 0)
 				serverData.server_name = findServerName(line);
@@ -172,14 +179,11 @@ ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
 				serverData.client_max_body_sizeDef = findMaxBody(line);
 			else if (line.find("error_page") == 0)
 				appendErrorPage(line, serverData.error_pageDef);
-			else if (line.find("upload_dir") == 0)
-				serverData.upload_dirDef = findUploadDir(line);
-			else if (line.find("cgi") == 0)
-				parseCgi(line, serverData.cgiDef);
 			else
 				throw std::runtime_error("Error: Unknown directive in server!");
 		}
 	}
+	checkPort(serverData);
 	return serverData;
 }
 
@@ -205,9 +209,6 @@ bool ConfigParser::checkValideIP(std::string& str)
 	for (size_t i = 0; i < strs.size();  i++)
 	{
 		if (strs[i].empty() || strs[i].size() > 3)
-			return false;
-
-		if (strs[i].size() > 1 && strs[i][0] == '0') //Разве блоки не могут начинаться с 0?
 			return false;
 
 		char* endptr;
@@ -254,13 +255,16 @@ std::vector<std::string> ConfigParser::findServerName(std::string& str)
 	std::vector<std::string> strs;
 	strs = splitWhitespace(str);
 	if (strs.size() < 2)
-		throw std::runtime_error("Invalid root directiv!");
+		throw std::runtime_error("Invalid server_name directiv!");
 	trimSemicolon(strs[strs.size() - 1]);
 	if (strs[strs.size() - 1].empty())
-		throw std::runtime_error("Invalid root directiv!");
+		throw std::runtime_error("Invalid server_name directiv!");
 	for (size_t i = 1; i < strs.size(); i++)
 	{
-		names.push_back(strs[i]);
+		if (validateServerName(strs[i]))
+			names.push_back(strs[i]);
+		else
+			throw std::runtime_error("Invalid server_name directiv!");
 	}
 	return names;
 }
@@ -357,19 +361,20 @@ void ConfigParser::appendErrorPage(std::string& str, std::map<int, std::string> 
 {
 	std::vector<std::string> strs;
 	strs = splitWhitespace(str);
+	size_t lastItem = strs.size() - 1;
 	if (strs.size() < 3)
 		throw std::runtime_error("Invalid error_page directiv!");
-	trimSemicolon(strs[strs.size() - 1]);
-	if (strs[strs.size() - 1].empty())
+	trimSemicolon(strs[lastItem]);
+	if (strs[lastItem].empty())
 		throw std::runtime_error("Invalid error_page directiv!");
-	std::string page = strs[strs.size() - 1];
-	for (size_t i = 1; i < strs.size() - 1 ; i++)
+	std::string page = strs[lastItem];
+	for (size_t i = 1; i < lastItem ; i++)
 	{
 		char* endptr;
 		errno = 0;
 		long code = std::strtol(strs[i].c_str(), &endptr, 10);
 		if (code < 100 || code > 599 || *endptr != '\0' || errno == ERANGE)
-			throw std::runtime_error("Invalid error_page format!");
+			throw std::runtime_error("Invalid error code format!");
 		errors[static_cast<int>(code)] = page;
 	}
 }
@@ -380,7 +385,6 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 
 	location.autoindex = false; //Дефолтная настройка
 	location.client_max_body_size = 1024 * 1024; //Дефолтная настройка
-	location.upload_dir = "/tmp/uplads"; //Дефолтная настройка
 	if (!strs.empty())
 		location.prefix = findPrefix(strs[0]);
 	for (size_t i = 1; i < strs.size(); i++)
@@ -400,13 +404,13 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 			location.client_max_body_size = findMaxBody(line);
 		else if (line.find("error_page") == 0)
 			appendErrorPage(line, location.error_page);
-		else if (line.find("upload_dir") == 0)
-			location.upload_dir = findUploadDir(line);
 		else if (line.find("cgi") == 0)
 			parseCgi(line, location.cgi);
 		else
 			throw std::runtime_error("Error: Unknown directive in location!");
 	}
+	if (location.allow_methods.empty())
+		defineDefaultMethods(location);
 	return location;
 }
 
@@ -435,7 +439,7 @@ std::vector<std::string> ConfigParser::findMethods(std::string& str)
 		{
 			strs[i][i_2] = std::toupper(strs[i][i_2]);
 		}
-		if (strs[i] == "GET" || strs[i] == "POST" || strs[i] == "DELETE")
+		if (strs[i] == "GET" || strs[i] == "POST" || strs[i] == "DELETE")//Если будет прописанн другой метод то выйдем с ошибкой
 			methods.push_back(strs[i]);
 		else
 			throw std::runtime_error("Error: Invalid method in directiv!");
@@ -447,18 +451,21 @@ std::map<int, std::string> ConfigParser::findRedir(std::string& str)
 	std::vector<std::string> strs;
 	std::map<int, std::string> redirect;
 	strs = splitWhitespace(str);
-	if (strs.size() != 3)
+	if (strs.size() < 2 || strs.size() > 3)
 		throw std::runtime_error("Error: Invalid redirect directiv!");
-	trimSemicolon(strs[2]);
-	if (strs[2].empty())
+	trimSemicolon(strs[strs.size() - 1]);
+	if (strs[strs.size() - 1].empty())
 		throw std::runtime_error("Invalid redirect format!");
 	{
 		char* endptr;
 		errno = 0;
 		long code = std::strtol(strs[1].c_str(), &endptr, 10);
-		if ( *endptr != '\0' || errno == ERANGE || code < 300 || code > 399)
+		if ( *endptr != '\0' || errno == ERANGE || code < 100 || code > 500)
 			throw std::runtime_error("Invalid redirect code!");
-		redirect[static_cast<int>(code)] = strs[2];
+		if (strs.size() == 3)
+			redirect[static_cast<int>(code)] = strs[2];
+		else
+			redirect[static_cast<int>(code)] = "";//Если у нас только код то строка будет пустой
 	}
 	return redirect;
 }
@@ -473,19 +480,7 @@ size_t ConfigParser::getServerCount(void)
 	return _configServ.size();
 }
 
-std::string ConfigParser::findUploadDir(std::string& str)
-{
-	std::vector<std::string> strs;
-	strs = splitWhitespace(str);
-	if (strs.size() != 2)
-		throw std::runtime_error("Invalid upload_dir directiv!");
-	trimSemicolon(strs[1]);
-	if (strs[1].empty())
-		throw std::runtime_error("Invalid upload_dir directiv!");
-	return strs[1];
-}
-
-void ConfigParser::parseCgi(std::string &str, std::map<std::string, CgiStruct> &cgi)//Парсер для формата cgi .php /usr/bin/php-cgi 50
+void ConfigParser::parseCgi(std::string &str, std::vector<CgiStruct> &cgi)//Парсер для формата cgi .php /usr/bin/php-cgi 50
 {
 	std::vector<std::string> strs;
 	strs = splitWhitespace(str);
@@ -494,11 +489,14 @@ void ConfigParser::parseCgi(std::string &str, std::map<std::string, CgiStruct> &
 		throw std::runtime_error("Invalid CGI directiv format!");
 	trimSemicolon(strs[strs.size() - 1]);
 	if (strs[strs.size() - 1].empty())
-		throw std::runtime_error("Invalid CGI directiv directiv!");
+		throw std::runtime_error("Invalid CGI directiv !");
 	CgiStruct cgiTemp;
 	cgiTemp.extension = strs[1];
 	cgiTemp.pathInterpreter = strs[2];
-
+	if (cgiTemp.extension[0] != '.')//Проверка что расщирение указанно корректно
+		throw std::runtime_error("Error: Invalid CGI extension!");
+	if (access(cgiTemp.pathInterpreter.c_str(), X_OK) != 0)//Проверка на то что путь к интерпритатору существует
+		throw std::runtime_error("Error: CGI interpreter not executable!");
 	if (strs.size() == 4)
 	{
 		char* endptr;
@@ -509,62 +507,196 @@ void ConfigParser::parseCgi(std::string &str, std::map<std::string, CgiStruct> &
 		cgiTemp.timeout = static_cast<size_t>(temp);
 	}
 	else
-		cgiTemp.timeout = 30;
-	cgi[strs[1]] = cgiTemp;
+		cgiTemp.timeout = 30;//Если скрипт незапустился то закончим процесс через указанное здесь время
+	cgi.push_back(cgiTemp);
 }
 
-//		void validateConfig(void);
-//		bool checkPath(const std::string& path);
-//		void validateServer(const ServerConfig& server);
-//		void validateLocation(const LocationStruct& location);
-//		void check port(void);
-// void ConfigParser::printConfig(void)
-// {
-// 	std::cout << "Config file for Webserv" << std::endl;
-// 	std::cout << "Nomber of servers" << _configServ.size() << std::endl;
+void ConfigParser::printConfig(void) //Небольшой дебаггер , вывод данных из атрибута конфигурационного файла 
+{
+	int i = 0;
+	std::cout << "Config file" << std::endl;
+	std::cout << "Number of server:" << getServerCount() << std::endl;
 
-// 	for (size_t i = 0; i < _configServ.size(); i++)
-// 	{
-// 		ServerConfig& server = _configServ[i];
-// 		std::cout << "--- Server" << (i + 1) << " ---" << std::endl;
-// 		std::cout << "Listen:" << std::endl;
-// 		for (size_t j = 0; j < server.listen.size(); j++)
-// 		{
-// 			std::cout << " " << server.listen[j].ip << ":" << server.listen[j].port << std::endl;
-// 		}
-// 		if (!server.server_name.empty())
-// 		{
-// 			std::cout << "Server name: ";
-// 			for (size_t j = 0; j < server.server_name.size(); j++)
-// 			{
-// 				std::cout << server.server_name[j];
-// 				if (j < server.server_name.size() - 1)
-// 					std::cout << ", ";
-// 			}
-// 			std::cout << std::endl;
-// 		}
-// 		if (!server.rootDef.empty())
-// 			std::cout << "Root default: " << server.rootDef << std::endl;
-// 		if (!server.indexDef.empty())
-// 		{
-// 			std::cout << "Index default: ";
-// 			for (size_t j = 0; j < server.indexDef.size(); j++)
-// 			{
-// 				std::cout << server.indexDef[j];
-// 				if (j < server.indexDef.size() - 1)
-// 					std::cout << ", ";
-// 			}
-// 			std::cout << std::endl;
-// 		}
-// 		std::cout << "Autoindex default: " << (server.autoindexDef ? "on" : "off") << std::endl;
-// 		std::cout << "Client max body size default: " << server.client_max_body_sizeDef << " bytes" << std::endl; 
-// 		if (!server.error_pageDef.empty())
-// 		{
-// 			std::cout << "Error page default: " << std::endl;
-// 			for (std::map<int, std::string>::iterator it = server.error_pageDef.begin(); it != server.error_pageDef.end(); ++it)
-// 			{
-				
-// 			}
-// 		}
-// 	}
-// }
+	if (_configServ.empty())
+		throw std::runtime_error("Error: Empty config file!");
+	for (std::vector<ServerConfig>::iterator it = _configServ.begin(); it != _configServ.end(); it++)
+	{
+		std::cout << "\nServer[" << i << "]" << std::endl;
+
+		for (std::vector<ListenStruct>::iterator il = it->listen.begin() ; il != it->listen.end(); il++)
+		{
+			std::cout << "Listen: " << std::endl;
+			std::cout << "-IP: " << il->ip << std::endl;
+			std::cout << "-Port: " << il->port << std::endl;
+		}
+		if (!it->server_name.empty())
+		{
+			std::cout << "Server name: " << std::endl;
+			for (std::vector<std::string>::iterator in = it->server_name.begin() ; in != it->server_name.end(); in++)
+			{
+				std::cout << "-" << *in << std::endl;
+			}
+		}
+		if (!it->rootDef.empty())
+			std::cout << "Default root: " << it->rootDef << std::endl;
+		if (!it->indexDef.empty())
+		{
+			std::cout << "Default index: " << std::endl;
+			for (std::vector<std::string>::iterator ii = it->indexDef.begin() ; ii != it->indexDef.end(); ii++)
+			{
+				std::cout << "-" << *ii << std::endl;
+			}
+		}
+		if (it->autoindexDef)
+			std::cout << "Default autoindex: " << "true" << std::endl;
+		else
+			std::cout << "Default autoindex: " << "false" << std::endl;
+		std::cout << "Default client_max_body_size: " << it->client_max_body_sizeDef << std::endl;
+		if (!it->error_pageDef.empty())
+		{
+			std::cout << "Default error page: " << std::endl;
+			for (std::map<int, std::string>::iterator iep = it->error_pageDef.begin() ; iep != it->error_pageDef.end(); iep++)
+			{
+				std::cout << "-" << iep->first << " " << iep->second << std::endl;
+			}
+		}
+		for (std::vector<LocationStruct>::iterator iloc = it->location.begin() ; iloc != it->location.end(); iloc++)
+		{
+			std::cout << "\nLocation: "<< std::endl;
+			if (!iloc->prefix.empty())
+				std::cout << "Prefix: " << iloc->prefix << std::endl;
+			if (!iloc->root.empty())
+				std::cout << "Root: " << iloc->root << std::endl;
+			if (!iloc->index.empty())
+			{
+				std::cout << "Index page: " << std::endl;
+				for (std::vector<std::string>::iterator ii = iloc->index.begin() ; ii != iloc->index.end(); ii++)
+				{
+					std::cout << "-" << *ii << std::endl;
+				}
+			}
+			if (iloc->autoindex)
+				std::cout << "Autoindex: " << "true" << std::endl;
+			else
+				std::cout << "Autoindex: " << "false" << std::endl;
+			std::cout << "Client_max_body_size: " << iloc->client_max_body_size << std::endl;
+			if (!iloc->error_page.empty())
+			{
+				std::cout << "Error page: " << std::endl;
+				for (std::map<int, std::string>::iterator iep = iloc->error_page.begin() ; iep != iloc->error_page.end(); iep++)
+				{
+					std::cout << "-" << iep->first << " " << iep->second << std::endl;
+				}
+			}
+			if (!iloc->allow_methods.empty())
+			{
+				std::cout << "Allow methods: " << std::endl;
+				for (std::vector<std::string>::iterator iam = iloc->allow_methods.begin() ; iam != iloc->allow_methods.end(); iam++)
+				{
+					std::cout << "-" << *iam << std::endl;
+				}
+			}
+			if (!iloc->redir.empty())
+			{
+				std::cout << "Redir: " << std::endl;
+				for (std::map<int, std::string>::iterator ir = iloc->redir.begin() ; ir != iloc->redir.end(); ir++)
+				{
+					std::cout << "-" << ir->first << " " << ir->second << std::endl;
+				}
+			}
+			if (!iloc->cgi.empty())
+			{
+				std::cout << "CGI: " << std::endl;
+				for (std::vector<CgiStruct>::iterator ic = iloc->cgi.begin() ; ic != iloc->cgi.end(); ic++)
+				{
+					std::cout << "Extension: " << ic->extension << std::endl;//Расширение для запуска скрипта
+					std::cout << "PathInterpreter: " << ic->pathInterpreter << std::endl;//Путь к интерпритатору
+					std::cout << "Timeout: " << ic->timeout << std::endl; 
+				}
+			}
+		}
+		i++;
+	}
+}
+
+
+bool ConfigParser::checkDoubleListen(std::vector<ListenStruct>& Servlisten, ListenStruct& listen)//Функция проверяет директиву listen в сервере. Не должно быть одинаковых IP/port
+{
+	if (!Servlisten.empty())
+	{
+		for (std::vector<ListenStruct>::iterator it = Servlisten.begin(); it != Servlisten.end(); it++)
+		{
+			if (it->port == listen.port)
+			{
+				if (it->ip == listen.ip || it->ip == "0.0.0.0" || listen.ip == "0.0.0.0")
+					return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool ConfigParser::validateGlobalUniqueListen(void)//Функция сравнивает директивы listen между серверами. Не должно быть одинаковых IP/port
+{
+	for (std::vector<ServerConfig>::iterator it = _configServ.begin(); it != _configServ.end(); it++)
+	{
+		for (std::vector<ServerConfig>::iterator it_2 = it + 1; it_2 != _configServ.end(); it_2++)
+		{
+			for (std::vector<ListenStruct>::iterator it_l = it->listen.begin(); it_l != it->listen.end(); it_l++)
+			{
+				for (std::vector<ListenStruct>::iterator it_l2 = it_2->listen.begin(); it_l2 != it_2->listen.end(); it_l2++)
+				{
+					if (it_l->port == it_l2->port)
+					{
+						if (it_l->ip == it_l2->ip || it_l->ip == "0.0.0.0" || it_l2->ip == "0.0.0.0")
+							return false;
+					}
+				}
+			}
+		}
+	}
+	return true;
+}
+
+void ConfigParser::checkPort(ServerConfig& serverData)//Проверяем что не используем привелигированный порт
+{
+	if (serverData.listen.empty())
+	{
+		defineDefaultListen(serverData);//Если listen пустой то ставим дефолтный
+		return;
+	}
+	for (std::vector<ListenStruct>::iterator it = serverData.listen.begin(); it != serverData.listen.end(); it++)
+	{
+		if (it->port < 1024 && it->port != 80 && it->port != 443)
+			throw std::runtime_error("Error: wrong port!");
+	}
+}
+
+void ConfigParser::defineDefaultListen(ServerConfig& serverData)//Функция назначает дефодный listen
+{
+	ListenStruct temp;
+	temp.ip = "0.0.0.0";//Все IP
+	temp.port = 80;//port hppt
+	serverData.listen.push_back(temp);
+}
+
+void ConfigParser::defineDefaultMethods(LocationStruct& location)//Функция добавляет в allow_methods все 3 метода как разрещенные , если в location allow_methods не был прописан
+{
+	location.allow_methods.push_back("GET");
+	location.allow_methods.push_back("POST");
+	location.allow_methods.push_back("DELETE");
+}
+
+bool ConfigParser::validateServerName(std::string& name)//Проверяет имя домена на соответствие RFC
+{
+	if (name.empty())
+		return false;
+	if (name[0] == '.' || name[name.size() - 1 ] == '.')
+		return false;
+	for (size_t i = 0; i < name.size(); i++)
+	{
+		if (!std::isalpha(name[i]) && name[i] != '.' && name[i] != '-' && name[i] != '_')
+			return false;
+	}
+	return true;
+}
