@@ -361,13 +361,14 @@ void ConfigParser::appendErrorPage(std::string& str, std::map<int, std::string> 
 {
 	std::vector<std::string> strs;
 	strs = splitWhitespace(str);
+	size_t lastItem = strs.size() - 1;
 	if (strs.size() < 3)
 		throw std::runtime_error("Invalid error_page directiv!");
-	trimSemicolon(strs[strs.size() - 1]);
-	if (strs[strs.size() - 1].empty())
+	trimSemicolon(strs[lastItem]);
+	if (strs[lastItem].empty())
 		throw std::runtime_error("Invalid error_page directiv!");
-	std::string page = strs[strs.size() - 1];
-	for (size_t i = 1; i < strs.size() - 1 ; i++)
+	std::string page = strs[lastItem];
+	for (size_t i = 1; i < lastItem ; i++)
 	{
 		char* endptr;
 		errno = 0;
@@ -621,16 +622,15 @@ void ConfigParser::printConfig(void) //Небольшой дебаггер , в�
 
 bool ConfigParser::checkDoubleListen(std::vector<ListenStruct>& Servlisten, ListenStruct& listen)//Функция проверяет директиву listen в сервере. Не должно быть одинаковых IP/port
 {
-	if (Servlisten.empty())
-		return true;
-	for (std::vector<ListenStruct>::iterator it = Servlisten.begin(); it != Servlisten.end(); it++)
+	if (!Servlisten.empty())
 	{
-		if (it->port == listen.port)
+		for (std::vector<ListenStruct>::iterator it = Servlisten.begin(); it != Servlisten.end(); it++)
 		{
-			if (it->ip == listen.ip)
-				return false;
-			if (it->ip == "0.0.0.0" || listen.ip == "0.0.0.0")
-				return false;
+			if (it->port == listen.port)
+			{
+				if (it->ip == listen.ip || it->ip == "0.0.0.0" || listen.ip == "0.0.0.0")
+					return false;
+			}
 		}
 	}
 	return true;
@@ -648,9 +648,7 @@ bool ConfigParser::validateGlobalUniqueListen(void)//Функция сравни
 				{
 					if (it_l->port == it_l2->port)
 					{
-						if (it_l->ip == it_l2->ip)
-							return false;
-						if (it_l->ip == "0.0.0.0" || it_l2->ip == "0.0.0.0")
+						if (it_l->ip == it_l2->ip || it_l->ip == "0.0.0.0" || it_l2->ip == "0.0.0.0")
 							return false;
 					}
 				}
