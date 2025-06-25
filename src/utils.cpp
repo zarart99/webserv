@@ -13,6 +13,8 @@ static std::vector<std::string> split(const std::string &path, char delim)
     return elems;
 }
 
+//Убираем "." и корректно обрабатываем ".." в URI.
+// Это защищает от выхода за пределы корневой папки сервера.
 std::string normalizeUri(const std::string &uri)
 {
     std::vector<std::string> parts = split(uri, '/');
@@ -24,11 +26,12 @@ std::string normalizeUri(const std::string &uri)
         if (parts[i] == "..")
         {
             if (!out.empty())
-                out.pop_back();
+                out.pop_back();  // поднимаемся на уровень выше
         }
         else
             out.push_back(parts[i]);
     }
+    // Собираем обратно в строку с ведущим "/"
     std::string result = "/";
     for (size_t i = 0; i < out.size(); ++i)
     {
@@ -36,6 +39,7 @@ std::string normalizeUri(const std::string &uri)
         if (i + 1 < out.size())
             result += "/";
     }
+     // Сохраняем завершающий "/" если он был в исходном URI
     if (!out.empty() && uri[uri.length() - 1] == '/')
         result += "/";
     if (out.empty() && uri[uri.length() - 1] == '/')
@@ -43,6 +47,8 @@ std::string normalizeUri(const std::string &uri)
     return result;
 }
 
+// Открываем директорию absPath и пробегаемся по её записям.
+// Формируем HTML-список ссылок на каждый файл/папку.
 std::string generateAutoindex(const std::string &absPath, const std::string &uri)
 {
     DIR *dir = opendir(absPath.c_str());

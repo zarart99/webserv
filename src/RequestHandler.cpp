@@ -95,10 +95,12 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
     std::string root = !location.root.empty() ? location.root : server.rootDef;
-    std::string normUri = normalizeUri(request.getUri());
+    //Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string normUri = normalizeUri(request.getUri());  // защита от "../"
     std::string absPath = root + normUri;
+    //проверяем, что мы не выходим за пределы root
     if (absPath.rfind(root + "/", 0) != 0)
-        return _createErrorResponse(403, &server);
+        return _createErrorResponse(403, &server); // на самом деле сюда не попадем, т.к. normalizeUri защищает от "../", но на всякий случай
 
     struct stat path_stat;
     if (stat(absPath.c_str(), &path_stat) != 0)
@@ -127,7 +129,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         else if (location.autoindex)
         {
-            std::string listing = generateAutoindex(absPath, normUri);
+            std::string listing = generateAutoindex(absPath, normUri); //Нет index, но включён autoindex on → генерируем HTML-листинг
             HttpResponse response;
             response.setStatusCode(200);
             response.addHeader("Content-Type", "text/html; charset=utf-8");
@@ -136,8 +138,8 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         else
         {
-            return _createErrorResponse(403, &server);
-        }
+            return _createErrorResponse(403, &server); // index нет и autoindex off — 403
+        } 
     }
 
     if (access(absPath.c_str(), R_OK) != 0)
