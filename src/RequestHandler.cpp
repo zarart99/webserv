@@ -1,5 +1,6 @@
 #include "RequestHandler.hpp"
 #include "ConfigParser.hpp"
+#include "utils.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -94,10 +95,13 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
     std::string root = !location.root.empty() ? location.root : server.rootDef;
-    std::string path = root + request.getUri();
+    std::string normUri = normalizeUri(request.getUri());
+    std::string absPath = root + normUri;
+    if (absPath.rfind(root + "/", 0) != 0)
+        return _createErrorResponse(403, &server);
 
     struct stat path_stat;
-    if (stat(path.c_str(), &path_stat) != 0)
+    if (stat(absPath.c_str(), &path_stat) != 0)
     {
         return _createErrorResponse(404, &server); // Путь не существует
     }
@@ -110,7 +114,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         std::string found_index_path = "";
         for (size_t i = 0; i < index_files.size(); ++i)
         {
-            std::string temp_path = path + (path[path.length() - 1] == '/' ? "" : "/") + index_files[i];
+            std::string temp_path = absPath + (absPath[absPath.length() - 1] == '/' ? "" : "/") + index_files[i];
             if (access(temp_path.c_str(), F_OK) == 0)
             {
                 found_index_path = temp_path;
@@ -119,21 +123,29 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         if (!found_index_path.empty())
         {
-            path = found_index_path; // Нашли индекс, будем отдавать его
+            absPath = found_index_path; // Нашли индекс, будем отдавать его
+        }
+        else if (location.autoindex)
+        {
+            std::string listing = generateAutoindex(absPath, normUri);
+            HttpResponse response;
+            response.setStatusCode(200);
+            response.addHeader("Content-Type", "text/html; charset=utf-8");
+            response.setBody(listing);
+            return response;
         }
         else
         {
-            // TODO: Проверить autoindex. Пока просто возвращаем ошибку.
             return _createErrorResponse(403, &server);
         }
     }
 
-    if (access(path.c_str(), R_OK) != 0)
+    if (access(absPath.c_str(), R_OK) != 0)
     {
         return _createErrorResponse(403, &server);
     }
 
-    std::ifstream file(path.c_str(), std::ios::binary);
+    std::ifstream file(absPath.c_str(), std::ios::binary);
     if (!file.is_open())
     {
         return _createErrorResponse(500, &server);
