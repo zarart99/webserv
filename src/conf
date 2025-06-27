@@ -18,9 +18,9 @@ server {
     }
 
 	location /uploads {
-		root /home/artemii/git/webserv_v1/webserv/public;
-		autoindex on;
+		root /www/html/uploads;
 		allow_methods GET POST DELETE;
+		autoindex on;
 		error_page 404 /errors/404.html;
     }
 }
