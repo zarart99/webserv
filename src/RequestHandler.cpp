@@ -95,10 +95,23 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
     std::string root = !location.root.empty() ? location.root : server.rootDef;
-    //Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
-    std::string normUri = normalizeUri(request.getUri());  // защита от "../"
-    std::string absPath = root + normUri;
-    //проверяем, что мы не выходим за пределы root
+    // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string normUri = normalizeUri(request.getUri()); // защита от "../"
+    //  Отрезаем префикс локации (alias-логика)
+    const std::string &prefix = location.prefix;
+    // Удостоверимся, что prefix заканчивается на “/”, иначе поставим его
+    std::string realPrefix = (!prefix.empty() && prefix[prefix.length() - 1] == '/') ? prefix : prefix + "/";
+
+    std::string relPath;
+    if (normUri.compare(0, realPrefix.length(), realPrefix) == 0)
+        // Если URI начинается с нашего префикса
+        relPath = normUri.substr(realPrefix.length() - 1); //чтобы оставить ведущий “/”
+    else
+        relPath = normUri; // На всякий случай, если не совпало — считаем весь URI относительным
+    //  Склеиваем с root
+    std::string absPath = root + relPath;
+
+    // проверяем, что мы не выходим за пределы root
     if (absPath.rfind(root + "/", 0) != 0)
         return _createErrorResponse(403, &server); // на самом деле сюда не попадем, т.к. normalizeUri защищает от "../", но на всякий случай
 
@@ -129,7 +142,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         else if (location.autoindex)
         {
-            std::string listing = generateAutoindex(absPath, normUri); //Нет index, но включён autoindex on → генерируем HTML-листинг
+            std::string listing = generateAutoindex(absPath, normUri); // Нет index, но включён autoindex on → генерируем HTML-листинг
             HttpResponse response;
             response.setStatusCode(200);
             response.addHeader("Content-Type", "text/html; charset=utf-8");
@@ -139,7 +152,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         else
         {
             return _createErrorResponse(403, &server); // index нет и autoindex off — 403
-        } 
+        }
     }
 
     if (access(absPath.c_str(), R_OK) != 0)
@@ -213,7 +226,7 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
     return response;
 }
 
-HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string>* allowed_methods)
+HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods)
 {
     HttpResponse response;
     response.setStatusCode(statusCode);
