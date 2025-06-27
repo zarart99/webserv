@@ -64,6 +64,7 @@ class ConfigParser
 
 	private:
 		std::vector<ServerConfig> _configServ;
+		std::vector<ListenStruct> _uniqueListen;
 
 		void parseConfigFile(std::string const & fileName );
 		ServerConfig parseServer(std::vector<std::string>& strs);
@@ -88,6 +89,7 @@ class ConfigParser
 		void checkPort(ServerConfig& serverData);
 		void defineDefaultListen(ServerConfig& serverData);
 		void defineDefaultMethods(LocationStruct& location);
+		void extractUniqueListen(void);
 };
 
 #endif
