@@ -21,6 +21,7 @@ ConfigParser & ConfigParser::operator=(ConfigParser const & src)
 	if (this != &src)
 	{
 		this->_configServ = src._configServ;
+		this->_uniqueListen = src._uniqueListen;
 	}
 	return *this;
 }
@@ -120,6 +121,7 @@ void ConfigParser::parseConfigFile(std::string const & fileName )
 	file.close();
 	if (!validateGlobalUniqueListen())
 		throw std::runtime_error("Error: Conflicting listen between servers!");
+	extractUniqueListen();
 }
 
 ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
@@ -617,6 +619,11 @@ void ConfigParser::printConfig(void) //Небольшой дебаггер , в�
 		}
 		i++;
 	}
+	std::cout << "IP/PORT" << std::endl;
+	for(size_t i = 0; i < _uniqueListen.size(); i++)
+	{
+		std::cout << "IP == " <<  _uniqueListen[i].ip << " PORT == " << _uniqueListen[i].port << std::endl;
+	}
 }
 
 
@@ -649,13 +656,61 @@ bool ConfigParser::validateGlobalUniqueListen(void)//Функция сравни
 					if (it_l->port == it_l2->port)
 					{
 						if (it_l->ip == it_l2->ip || it_l->ip == "0.0.0.0" || it_l2->ip == "0.0.0.0")
-							return false;
+						{
+					
+							if (it->server_name.empty() && it_2->server_name.empty())
+								return false;
+							for (size_t i = 0; i < it->server_name.size(); i++)
+							{
+								for (size_t i_2 = 0; i_2 < it_2->server_name.size(); i_2++)
+								{
+									if (it->server_name[i] == it_2->server_name[i_2])
+										return false;
+								}
+							}
+						}
 					}
 				}
+
 			}
 		}
 	}
 	return true;
+}
+
+void ConfigParser::extractUniqueListen(void)
+{
+	for (std::vector<ServerConfig>::iterator it = _configServ.begin(); it != _configServ.end(); it++)//Идем по каждому серверу
+	{
+		if (_uniqueListen.empty())//Если список _uniqueListen пустой скидываем ему сразу все listen первого сервера.
+		{
+			_uniqueListen = it->listen;
+			continue;
+		}
+		for(size_t i = 0; i < it->listen.size(); i++)//Идем по listen текущего сервера
+		{
+			bool isUnique = true;
+			for (std::vector<ListenStruct>::iterator it_u = _uniqueListen.begin(); it_u != _uniqueListen.end();) //сравниваем с каждым элементом в _uniqueListen
+			{
+				if (it_u->port == it->listen[i].port)//Если port в listen совпадает с тем что находиться в _uniqueListen
+				{
+					if (it_u->ip == it->listen[i].ip || it_u->ip == "0.0.0.0")//Если у них совпадают Ip или ip в _uniqueListen перекрывает новый listen  
+					{
+						isUnique = false;//Отмечаем что текущий Listen не уникальный
+						break;//Прерываем цикл 
+					}
+					if (it->listen[i].ip == "0.0.0.0")//Если текущий listen имет перекрывающий IP
+					{
+						it_u = _uniqueListen.erase(it_u);//Удаляем более направленый ip из _uniqueListen
+						continue;//прододжаем проверку
+					}
+				}
+				it_u++;
+			}
+			if (isUnique)//Если текущий listen уникальный вставляем его в контейнер
+				_uniqueListen.push_back(it->listen[i]);
+		}
+	}
 }
 
 void ConfigParser::checkPort(ServerConfig& serverData)//Проверяем что не используем привелигированный порт
