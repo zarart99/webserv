@@ -1,6 +1,7 @@
 #include "RequestHandler.hpp"
 #include "ConfigParser.hpp"
 #include "utils.hpp"
+#include "MimeTypes.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -170,8 +171,13 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 
     HttpResponse response;
     response.setStatusCode(200);
-    // TODO:
-    response.addHeader("Content-Type", "text/plain"); // Миш, я тут хз как определять MIME-тип. Пока хардкод
+    size_t pos = absPath.find_last_of(".");
+    std::string ext = (pos != std::string::npos) ? absPath.substr(pos) : "";
+    const std::map<std::string, std::string>& mimes = getMimeTypes();
+    std::string mime = "application/octet-stream";
+    if (mimes.count(ext))
+        mime = mimes.at(ext);
+    response.addHeader("Content-Type", mime);
     response.setBody(body);
     return response;
 }
