@@ -1,5 +1,6 @@
 #include "RequestHandler.hpp"
 #include "ConfigParser.hpp"
+#include "utils.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -94,10 +95,28 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
     std::string root = !location.root.empty() ? location.root : server.rootDef;
-    std::string path = root + request.getUri();
+    // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string normUri = normalizeUri(request.getUri()); // защита от "../"
+    //  Отрезаем префикс локации (alias-логика)
+    const std::string &prefix = location.prefix;
+    // Удостоверимся, что prefix заканчивается на “/”, иначе поставим его
+    std::string realPrefix = (!prefix.empty() && prefix[prefix.length() - 1] == '/') ? prefix : prefix + "/";
+
+    std::string relPath;
+    if (normUri.compare(0, realPrefix.length(), realPrefix) == 0)
+        // Если URI начинается с нашего префикса
+        relPath = normUri.substr(realPrefix.length() - 1); //чтобы оставить ведущий “/”
+    else
+        relPath = normUri; // На всякий случай, если не совпало — считаем весь URI относительным
+    //  Склеиваем с root
+    std::string absPath = root + relPath;
+
+    // проверяем, что мы не выходим за пределы root
+    if (absPath.rfind(root + "/", 0) != 0)
+        return _createErrorResponse(403, &server); // на самом деле сюда не попадем, т.к. normalizeUri защищает от "../", но на всякий случай
 
     struct stat path_stat;
-    if (stat(path.c_str(), &path_stat) != 0)
+    if (stat(absPath.c_str(), &path_stat) != 0)
     {
         return _createErrorResponse(404, &server); // Путь не существует
     }
@@ -110,7 +129,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         std::string found_index_path = "";
         for (size_t i = 0; i < index_files.size(); ++i)
         {
-            std::string temp_path = path + (path[path.length() - 1] == '/' ? "" : "/") + index_files[i];
+            std::string temp_path = absPath + (absPath[absPath.length() - 1] == '/' ? "" : "/") + index_files[i];
             if (access(temp_path.c_str(), F_OK) == 0)
             {
                 found_index_path = temp_path;
@@ -119,21 +138,29 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         if (!found_index_path.empty())
         {
-            path = found_index_path; // Нашли индекс, будем отдавать его
+            absPath = found_index_path; // Нашли индекс, будем отдавать его
+        }
+        else if (location.autoindex)
+        {
+            std::string listing = generateAutoindex(absPath, normUri); // Нет index, но включён autoindex on → генерируем HTML-листинг
+            HttpResponse response;
+            response.setStatusCode(200);
+            response.addHeader("Content-Type", "text/html; charset=utf-8");
+            response.setBody(listing);
+            return response;
         }
         else
         {
-            // TODO: Проверить autoindex. Пока просто возвращаем ошибку.
-            return _createErrorResponse(403, &server);
+            return _createErrorResponse(403, &server); // index нет и autoindex off — 403
         }
     }
 
-    if (access(path.c_str(), R_OK) != 0)
+    if (access(absPath.c_str(), R_OK) != 0)
     {
         return _createErrorResponse(403, &server);
     }
 
-    std::ifstream file(path.c_str(), std::ios::binary);
+    std::ifstream file(absPath.c_str(), std::ios::binary);
     if (!file.is_open())
     {
         return _createErrorResponse(500, &server);
@@ -199,7 +226,7 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
     return response;
 }
 
-HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string>* allowed_methods)
+HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods)
 {
     HttpResponse response;
     response.setStatusCode(statusCode);
