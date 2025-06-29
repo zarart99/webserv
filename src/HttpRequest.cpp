@@ -1,5 +1,6 @@
 #include "HttpRequest.hpp"
 #include <cstdlib>
+#include <sstream>
 
 
 static std::string trim(const std::string &s)
@@ -23,6 +24,25 @@ static std::string toLower(std::string s)
 {
     std::transform(s.begin(), s.end(), s.begin(), static_cast<int (*)(int)>(std::tolower));
     return s;
+}
+
+// разбираем чанки
+static std::string decodeChunked(const std::string &in)
+{
+    std::string out;
+    size_t pos = 0;
+    while (true)
+    {
+        size_t eol = in.find("\r\n", pos);
+        if (eol == std::string::npos) throw std::runtime_error("incomplete chunk");
+        size_t len = std::strtol(in.substr(pos, eol - pos).c_str(), NULL, 16); // hex размер
+        pos = eol + 2;
+        if (len == 0) break; // конец чанков
+        if (in.size() < pos + len + 2) throw std::runtime_error("incomplete data");
+        out.append(in, pos, len);
+        pos += len + 2;
+    }
+    return out;
 }
 
 
@@ -128,16 +148,21 @@ void HttpRequest::_parseHeaders(std::stringstream &request_stream)
 
 void HttpRequest::_parseBody(std::stringstream &request_stream)
 {
-
-    if (!request_stream.eof())
+    std::string raw((std::istreambuf_iterator<char>(request_stream)), std::istreambuf_iterator<char>());
+    if (_headers.count("transfer-encoding") && _headers["transfer-encoding"] == "chunked")
     {
-        _body.assign(std::istreambuf_iterator<char>(request_stream), std::istreambuf_iterator<char>());
+        _body = decodeChunked(raw);
+        _headers.erase("transfer-encoding");           // убираем заголовок
+        std::ostringstream ss;
+        ss << _body.size();
+        _headers["content-length"] = ss.str(); // новый размер
     }
-
-    size_t declared_length = getContentLength();
-    if (declared_length > 0 && declared_length != _body.size())
+    else
     {
-        throw std::runtime_error("400 Bad Request: Content-Length mismatch");
+        _body = raw;
+        size_t declared_length = getContentLength();
+        if (declared_length > 0 && declared_length != _body.size())
+            throw std::runtime_error("400 Bad Request: Content-Length mismatch");
     }
 }
 
