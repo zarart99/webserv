@@ -2,11 +2,14 @@
 #define CLIENT_HPP
 
 #include <string>
-#include "config.hpp"
+//#include "config.hpp"
+#include "ConfigParser.hpp"
+
 
 class Client {
 public:
     Client(int fd, ServerConfig* config);
+    ServerConfig* getConfig() const { return config; }   
     ~Client();
 
     void handleRead();   // вызов при POLLIN

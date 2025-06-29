@@ -1,0 +1,45 @@
+server {
+	listen 127.0.0.1:8001;
+	server_name localhost my_new_site;
+
+	location / {
+        root /www/html;
+		index index.html index.htm;
+		allow_methods GET;
+		autoindex off;
+		error_page 404 /errors/404.html;
+    }
+
+	location /api {
+    	root /www/html/api;
+		allow_methods GET POST;
+		client_max_body_size 10M;
+		cgi .py /usr/bin/php-cgi;
+    }
+
+	location /uploads {
+		root /www/html/uploads;
+		allow_methods GET POST DELETE;
+		autoindex on;
+		error_page 404 /errors/404.html;
+    }
+}
+
+server {
+	listen 196.0.0.1:8001;
+	server_name mysite;
+	error_page 404 /errors/404.html;
+	
+	location / {
+        root /www/html;
+        index index.html index.htm;
+		allow_methods GET;
+    }
+
+	location /uploads/ {
+        root /www/html/uploads;
+        index index.html index.htm;
+		autoindex on;
+		allow_methods GET POST DELETE;
+    }
+}

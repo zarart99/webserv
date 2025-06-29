@@ -1,4 +1,5 @@
 #include "HttpRequest.hpp"
+#include <cstdlib>
 
 
 static std::string trim(const std::string &s)
@@ -14,28 +15,6 @@ static std::string trim(const std::string &s)
 }
 
 bool HttpRequest::isValid() const {
-    // if (_method.empty() || _uri.empty() || _http_version.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: Missing required fields in request");
-    // }
-
-    // if (_headers.find("Host") == _headers.end())
-    // {
-    //     throw std::runtime_error("400 Bad Request: Missing 'Host' header");
-    // // }
-
-    // if (_method == "POST" && _body.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: POST request must have a body");
-    // }
-    // if (_method == "DELETE" && _uri.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: DELETE request must specify a URI");
-    // }
-    // if (_method == "GET" && !_body.empty())
-    // {
-    //     throw std::runtime_error("400 Bad Request: GET request must not have a body");
-    // }
     return true;
 }
 
@@ -87,6 +66,11 @@ void HttpRequest::_parseRequestLine(std::stringstream &request_stream)
         throw std::runtime_error("400 Bad Request: Malformed request line. Expected 'METHOD URI VERSION'");
     }
 
+    std::string extra;
+    if (line_stream >> extra) {
+        throw std::runtime_error("400 Bad Request");
+    }
+
     if (_method != "GET" && _method != "POST" && _method != "DELETE")
     {
         throw std::runtime_error("501 Not Implemented: Unsupported method '" + _method + "'");
@@ -94,6 +78,10 @@ void HttpRequest::_parseRequestLine(std::stringstream &request_stream)
     if (_http_version != "HTTP/1.1")
     {
         throw std::runtime_error("505 HTTP Version Not Supported: Server only accepts HTTP/1.1");
+    }
+
+    if (_uri.empty() || _uri[0] != '/') {
+        throw std::runtime_error("400 Bad Request");
     }
 }
 
@@ -111,23 +99,67 @@ void HttpRequest::_parseHeaders(std::stringstream &request_stream)
         std::string::size_type colon_pos = header_line.find(':');
         if (colon_pos == std::string::npos)
         {
-            continue;
+            throw std::runtime_error("400 Bad Request: malformed header");
         }
 
-        std::string key = header_line.substr(0, colon_pos);
-        std::string value = header_line.substr(colon_pos + 1);
+        std::string key = trim(header_line.substr(0, colon_pos));
+        std::string value = trim(header_line.substr(colon_pos + 1));
 
-        _headers[toLower(trim(key))] = trim(value);
+        // Проверяем корректность имени заголовка (только буквы, цифры и -)
+        if (key.empty() || key.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != std::string::npos)
+        {
+            throw std::runtime_error("400 Bad Request: invalid header name");
+        }
+
+        std::string lower_key = toLower(key);
+        if (_headers.count(lower_key))
+        {
+            throw std::runtime_error("400 Bad Request: duplicate header");
+        }
+
+        _headers[lower_key] = value;
+    }
+
+    if (_http_version == "HTTP/1.1" && !_headers.count("host"))
+    {
+        throw std::runtime_error("400 Bad Request: Host header required");
     }
 }
 
 void HttpRequest::_parseBody(std::stringstream &request_stream)
 {
- 
+
     if (!request_stream.eof())
     {
         _body.assign(std::istreambuf_iterator<char>(request_stream), std::istreambuf_iterator<char>());
     }
+
+    size_t declared_length = getContentLength();
+    if (declared_length > 0 && declared_length != _body.size())
+    {
+        throw std::runtime_error("400 Bad Request: Content-Length mismatch");
+    }
+}
+
+size_t HttpRequest::getContentLength() const {
+    // Ищем заголовок "content-length" (ключи у нас уже в нижнем регистре)
+    std::map<std::string, std::string>::const_iterator it = _headers.find("content-length");
+
+    // Если заголовок не найден, возвращаем 0
+    if (it == _headers.end()) {
+        return 0;
+    }
+
+    // Конвертируем значение заголовка из строки в число
+    char* end;
+    long length = std::strtol(it->second.c_str(), &end, 10);
+
+    // Проверяем на ошибки конвертации или отрицательные значения
+    if (*end != '\0' || length < 0) {
+        return 0; // Некорректное значение
+    }
+    
+    return static_cast<size_t>(length);
 }
 
 

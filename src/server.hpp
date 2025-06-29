@@ -6,11 +6,13 @@
 #include <string>
 #include <sys/poll.h>
 #include "client.hpp"
-#include "config.hpp" // Структура ServerConfig/LocationStruct (от Участника 3)
+#include "ConfigParser.hpp"
+#include "RequestHandler.hpp"
 
-class Server {
+class Server
+{
 public:
-    Server(const std::vector<ServerConfig>& configs);
+    Server(ConfigParser &parser);
     ~Server();
 
     void run();
@@ -32,5 +34,4 @@ private:
     Server(const Server&);
     Server& operator=(const Server&);
 };
-
-#endif
+#endif // SERVER_HPP

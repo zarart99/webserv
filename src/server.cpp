@@ -5,23 +5,31 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <cstdio>
 #include "HttpResponse.hpp"
 
-Server::Server(const std::vector<ServerConfig>& configs) {
-    initListeners(configs);
+Server::Server(ConfigParser &parser)
+    : cfg(parser),
+      server_configs(parser.getServers())
+{
+    initListeners(server_configs);
 }
 
-Server::~Server() {
+Server::~Server()
+{
     for (size_t i = 0; i < fds.size(); ++i)
         close(fds[i].fd);
-    for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it)
+    for (std::map<int, Client *>::iterator it = clients.begin(); it != clients.end(); ++it)
         delete it->second;
 }
 
-void Server::initListeners(const std::vector<ServerConfig>& configs) {
-    for (size_t i = 0; i < configs.size(); ++i) {
-        const std::vector<ListenStruct>& listenVec = configs[i].listen;
-        for (size_t j = 0; j < listenVec.size(); ++j) {
+void Server::initListeners(const std::vector<ServerConfig> &configs)
+{
+    for (size_t i = 0; i < configs.size(); ++i)
+    {
+        const std::vector<ListenStruct> &listenVec = configs[i].listen;
+        for (size_t j = 0; j < listenVec.size(); ++j)
+        {
             int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
             fcntl(listen_fd, F_SETFL, O_NONBLOCK);
 
@@ -30,7 +38,7 @@ void Server::initListeners(const std::vector<ServerConfig>& configs) {
             addr.sin_port = htons(listenVec[j].port);
             addr.sin_addr.s_addr = inet_addr(listenVec[j].ip.c_str());
 
-            bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr));
+            bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr));
             listen(listen_fd, 100);
 
             struct pollfd pfd;
@@ -44,15 +52,26 @@ void Server::initListeners(const std::vector<ServerConfig>& configs) {
     }
 }
 
-void Server::run() {
-    while (true) {
-        try {
+void Server::run()
+{
+    while (true)
+    {
+        try
+        {
             int ret = poll(&fds[0], fds.size(), 1000); // 1 сек
-            if (ret < 0) { perror("poll"); break; }
+            if (ret < 0)
+            {
+                perror("poll");
+                break;
+            }
             handlePollEvents();
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception &e)
+        {
             std::cerr << "Error: " << e.what() << std::endl;
-        } catch (...) {
+        }
+        catch (...)
+        {
             std::cerr << "Unknown error occurred" << std::endl;
         }
     }
@@ -62,10 +81,11 @@ void Server::handlePollEvents() {
     time_t currentTime = time(NULL);
     for (size_t i = 0; i < fds.size(); ++i) {
         int fd = fds[i].fd;
-        // 1. Новое подключение
-        if (fds[i].revents & POLLIN && listenConfigs.count(fd)) {
+
+        /* Новое соединение */
+        if ((fds[i].revents & POLLIN) && listenConfigs.count(fd))
+        {
             acceptNewClient(fd);
-            std::cout << "New client connected: fd " << fd << std::endl;
             continue;
         }
 
@@ -91,38 +111,44 @@ void Server::handlePollEvents() {
         if (clients.count(fd) && clients[fd]->isDone() || 
         (currentTime - clientLastActivity[fd] > CLIENT_TIMEOUT)) {
             removeClient(fd);
-        } else {
+        }
+        else
+        {
             ++i;
         }
     }
 }
 
-void Server::acceptNewClient(int listen_fd) {
+void Server::acceptNewClient(int listen_fd)
+{
     int client_fd = accept(listen_fd, NULL, NULL);
-    if (client_fd < 0) return;
+    if (client_fd < 0)
+        return;
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
-    struct pollfd pfd = { client_fd, POLLIN | POLLOUT, 0 };
+    struct pollfd pfd = {client_fd, POLLIN | POLLOUT, 0};
     fds.push_back(pfd);
 
-    ServerConfig* config = &listenConfigs[listen_fd];
+    ServerConfig *config = &listenConfigs[listen_fd];
     clients[client_fd] = new Client(client_fd, config);
     clientLastActivity[client_fd] = time(NULL);
 }
 
-void Server::removeClient(int client_fd) {
+void Server::removeClient(int client_fd)
+{
     close(client_fd);
     delete clients[client_fd];
     clients.erase(client_fd);
     clientLastActivity.erase(client_fd);
 
-    for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it) {
-        if (it->fd == client_fd) {
+    for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it)
+    {
+        if (it->fd == client_fd)
+        {
             fds.erase(it);
             break;
         }
     }
 }
-
 
 // #include <iostream>
 // #include <vector>
