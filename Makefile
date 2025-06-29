@@ -4,7 +4,7 @@ CC      = g++
 FLAGS   = -Wall -Wextra -Werror -std=c++98
 SRCDIR  = ./src/
 OBJDIR  = $(SRCDIR)obj/
-SRCS    = server.cpp client.cpp HttpRequest.cpp HttpResponse.cpp webserv.cpp ConfigParser.cpp RequestHandler.cpp utils.cpp
+SRCS    = server.cpp client.cpp HttpRequest.cpp HttpResponse.cpp webserv.cpp ConfigParser.cpp RequestHandler.cpp utils.cpp MimeTypes.cpp
 OBJS    = $(addprefix $(OBJDIR), $(SRCS:.cpp=.o)) 
 RM      = rm -f
 
