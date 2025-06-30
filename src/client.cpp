@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include "HttpResponse.hpp"
+#include <cstdlib>
 
 Client::Client(int fd, ServerConfig *config)
     : fd(fd), config(config), finished(false) {}
@@ -52,7 +53,28 @@ void Client::handleWrite()
 std::string &Client::getRequestBuffer() { return readBuffer; }
 bool Client::isRequestReady()
 {
-    return (readBuffer.find("\r\n\r\n") != std::string::npos);
+    size_t headEnd = readBuffer.find("\r\n\r\n");
+    if (headEnd == std::string::npos)
+        return false;
+    std::string headers = readBuffer.substr(0, headEnd + 4);
+    if (headers.find("Transfer-Encoding: chunked") != std::string::npos)
+    {
+        if (readBuffer.find("\r\n0\r\n\r\n", headEnd + 4) != std::string::npos) // ждем конец чанков
+            return true;
+        return false;
+    }
+    size_t pos = headers.find("Content-Length:");
+    if (pos != std::string::npos)
+    {
+        pos += 15;
+        while (pos < headers.size() && (headers[pos] == ' ' || headers[pos] == '\t'))
+            ++pos;
+        long len = std::strtol(headers.c_str() + pos, NULL, 10);
+        if (len >= 0 && readBuffer.size() >= headEnd + 4 + static_cast<size_t>(len))
+            return true;
+        return false;
+    }
+    return true;
 }
 void Client::setResponse(const std::string &resp) { writeBuffer = resp; }
 bool Client::isDone() { return finished; }
