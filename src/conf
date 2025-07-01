@@ -1,5 +1,5 @@
 server {
-	listen 127.0.0.1:8001;
+	listen 0.0.0.0:8001;
 	server_name localhost my_new_site;
 
 	location / {
@@ -14,7 +14,7 @@ server {
     	root /www/html/api;
 		allow_methods GET POST;
 		client_max_body_size 10M;
-		cgi .py /usr/bin/php-cgi;
+		cgi .php /usr/bin/php-cgi;
     }
 
 	location /uploads {
@@ -26,7 +26,7 @@ server {
 }
 
 server {
-	listen 196.0.0.1:8001;
+	listen 196.0.0.1:8006;
 	server_name mysite;
 	error_page 404 /errors/404.html;
 	

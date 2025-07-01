@@ -8,6 +8,7 @@
 #include "client.hpp"
 #include "ConfigParser.hpp"
 #include "RequestHandler.hpp"
+#include "Cgi.hpp"
 
 class Server
 {

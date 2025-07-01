@@ -7,7 +7,7 @@ RequestHandler::RequestHandler(ConfigParser &config) : _config(config) {}
 
 RequestHandler::~RequestHandler() {}
 
-HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serverPort, const std::string &serverHost)
+HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serverPort, const std::string &serverIp, const std::string &serverHost)
 {
 
     const ServerConfig *server_config = NULL;
@@ -15,7 +15,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 
     try
     {
-        server_config = _findServerConfig(serverPort, serverHost);
+        server_config = _findServerConfig(serverPort, serverIp, serverHost);
 
         // Проверяем, 400
         if (!server_config)
@@ -235,47 +235,35 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerCo
     return response;
 }
 
-const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string &host) const
+const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string& ip, const std::string &host) const
 {
-    const std::vector<ServerConfig> &servers = _config.getServers(); // Миш, мне тут нужен геттер типа return this->_configServ
+    const std::vector<ServerConfig> &servers = _config.getServers();
     const ServerConfig *default_server_for_port = NULL;
+    bool isDefault = false;
 
-    for (size_t i = 0; i < servers.size(); ++i)
+    for (std::vector<ServerConfig>::const_iterator it = servers.begin(); it != servers.end(); it++)
     {
-        bool port_match = false;
-        // Проверяем, слушает ли текущий сервер нужный порт
-        for (size_t j = 0; j < servers[i].listen.size(); ++j)
+        for (size_t i = 0; i < it->listen.size(); i++)
         {
-            if (servers[i].listen[j].port == port)
+            if (it->listen[i].port == port)//Сначала сравниваем по port
             {
-                port_match = true;
-                // Если это первый сервер, который мы нашли для этого порта,
-                // запоминаем его как дефолтный на случай, если не найдем точного совпадения по хосту.
-                if (!default_server_for_port)
+                if (it->listen[i].ip == ip || it->listen[i].ip == "0.0.0.0")//Если Ip одинаковые либо в листен прописан 0.0.0.0 то все ок идем дальше
                 {
-                    default_server_for_port = &servers[i];
+                    for (size_t i_2 = 0; i_2 < it->server_name.size(); i_2++)//Ищем похожиее имя домена
+                    {
+                        if (it->server_name[i_2] == host)//Если находим то это наш сервер
+                            return &(*it);
+                    }
+                    if (!isDefault)
+                    {
+                        default_server_for_port = &(*it);//Первый сервер с совпадением по IP/PORT становиться дефолтным, отправляем его если нет совпадений по имени домена
+                        isDefault = true;
+                    }
+                    break;
                 }
-                break;
-            }
-        }
-
-        if (!port_match)
-        {
-            continue; // Этот сервер не на нашем порту, пропускаем
-        }
-
-        // Если порт совпал, проверяем server_name
-        for (size_t j = 0; j < servers[i].server_name.size(); ++j)
-        {
-            if (servers[i].server_name[j] == host)
-            {
-                return &servers[i]; // Нашли точное совпадение! Возвращаем его.
             }
         }
     }
-
-    // Если мы прошли весь цикл и не нашли точного совпадения по хосту,
-    // возвращаем дефолтный сервер для этого порта (или NULL, если и такого не было).
     return default_server_for_port;
 }
 

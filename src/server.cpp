@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <cstdio>
 #include "HttpResponse.hpp"
+#include "Cgi.hpp"
 
 Server::Server(ConfigParser &parser)
     : cfg(parser),
@@ -102,17 +103,24 @@ void Server::handlePollEvents()
                 HttpRequest req(clients[fd]->getReadBuffer());
 
                 /* 2. порт и Host */
-                int port = clients[fd]->getConfig()->listen[0].port;
+                int port = 8001; //Заглушки
+                std::string ip = "127.0.0.1"; //Заглушки
                 std::string host;
                 if (req.getHeaders().count("host"))
                     host = req.getHeaders().at("host");
 
-                /* 3. RequestHandler */
+                Cgi script(cfg, port, ip, host);
                 RequestHandler handler(cfg);
-                HttpResponse resp = handler.handleRequest(req, port, host);
-
-                /* 4. кладём готовый ответ */
-                clients[fd]->setResponse(resp.buildResponse());
+                if (script.isCgi(req.getUri))
+                {
+                    script.cgiHandler()
+                    clients[fd]->setResponse(resp.buildResponse());
+                }
+                else
+                {
+                    HttpResponse resp = handler.handleRequest(req, port, ip, host);
+                    clients[fd]->setResponse(resp.buildResponse());
+                }
             }
         }
 
