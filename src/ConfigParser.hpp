@@ -61,6 +61,7 @@ class ConfigParser
 		void printConfig(void);
 		const std::vector<ServerConfig>& getServers(void) const;
 		size_t getServerCount(void);
+		std::vector<ListenStruct> getUniqueListen(void) const;
 
 	private:
 		std::vector<ServerConfig> _configServ;
