@@ -52,6 +52,26 @@ const ServerConfig* Server::findMatchingConfig(const std::vector<ServerConfig>& 
     return &configs[0];
 }
 
+int setupSocket() {
+    // Создаем сокет
+    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd < 0) {
+        std::cerr << "Ошибка при создании сокета: " << strerror(errno) << std::endl;
+        return -1;
+    }
+    
+    // Устанавливаем опцию повторного использования адреса
+    int opt = 1;
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        std::cerr << "Ошибка setsockopt(SO_REUSEADDR): " << strerror(errno) << std::endl;
+    }
+    
+    // Устанавливаем неблокирующий режим
+    fcntl(listen_fd, F_SETFL, O_NONBLOCK);
+    
+    return listen_fd;
+}
+
 void Server::initListeners(const std::vector<ServerConfig> &configs)
 {
     // Получаем уникальные листенеры из парсера
@@ -60,22 +80,12 @@ void Server::initListeners(const std::vector<ServerConfig> &configs)
     for (size_t i = 0; i < uniqueListeners.size(); ++i)
     {
         const ListenStruct& listenInfo = uniqueListeners[i];
-        
-        // Создаем сокет для каждого уникального листенера
-        int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+        // создание и настройка сокета
+        int listen_fd = setupSocket();
         if (listen_fd < 0) {
-            std::cerr << "Ошибка при создании сокета: " << strerror(errno) << std::endl;
             continue;
         }
-        
-        // Устанавливаем опцию повторного использования адреса
-        int opt = 1;
-        if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-            std::cerr << "Ошибка setsockopt(SO_REUSEADDR): " << strerror(errno) << std::endl;
-        }
-        
-        // Устанавливаем неблокирующий режим
-        fcntl(listen_fd, F_SETFL, O_NONBLOCK);
 
         // Настраиваем адрес
         struct sockaddr_in addr;
