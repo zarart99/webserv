@@ -273,14 +273,26 @@ std::vector<std::string> ConfigParser::findServerName(std::string& str)
 
 std::string ConfigParser::findRoot(std::string& str)
 {
-	std::vector<std::string> strs;
-	strs = splitWhitespace(str);
-	if (strs.size() != 2)
-		throw std::runtime_error("Invalid root directiv!");
-	trimSemicolon(strs[1]);
-	if (strs[1].empty())
-		throw std::runtime_error("Invalid root directiv!");
-	return strs[1];
+        std::vector<std::string> strs;
+        strs = splitWhitespace(str);
+        if (strs.size() != 2)
+                throw std::runtime_error("Invalid root directiv!");
+        trimSemicolon(strs[1]);
+        if (strs[1].empty())
+                throw std::runtime_error("Invalid root directiv!");
+        return strs[1];
+}
+
+std::string ConfigParser::findUploadPath(std::string& str)
+{
+        std::vector<std::string> strs;
+        strs = splitWhitespace(str);
+        if (strs.size() != 2)
+                throw std::runtime_error("Invalid upload_path directiv!");
+        trimSemicolon(strs[1]);
+        if (strs[1].empty())
+                throw std::runtime_error("Invalid upload_path directiv!");
+        return strs[1];
 }
 
 bool ConfigParser::findAutoindex(std::string& str)
@@ -400,10 +412,12 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 			location.index = findIndex(line);
 		else if (line.find("autoindex") == 0)
 			location.autoindex = findAutoindex(line);
-		else if (line.find("allow_methods") == 0)
-			location.allow_methods = findMethods(line);
-		else if (line.find("client_max_body_size") == 0)
-			location.client_max_body_size = findMaxBody(line);
+                else if (line.find("allow_methods") == 0)
+                        location.allow_methods = findMethods(line);
+                else if (line.find("upload_path") == 0)
+                        location.upload_path = findUploadPath(line);
+                else if (line.find("client_max_body_size") == 0)
+                        location.client_max_body_size = findMaxBody(line);
 		else if (line.find("error_page") == 0)
 			appendErrorPage(line, location.error_page);
 		else if (line.find("cgi") == 0)
@@ -411,9 +425,11 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 		else
 			throw std::runtime_error("Error: Unknown directive in location!");
 	}
-	if (location.allow_methods.empty())
-		defineDefaultMethods(location);
-	return location;
+        if (location.allow_methods.empty())
+                defineDefaultMethods(location);
+        if (location.upload_path.empty())
+                location.upload_path = location.root;
+        return location;
 }
 
 std::string ConfigParser::findPrefix(std::string& str)
