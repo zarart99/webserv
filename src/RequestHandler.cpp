@@ -100,8 +100,13 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
-    std::string root = !location.root.empty() ? location.root : server.rootDef;
-    // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string root;
+    if (!location.upload_path.empty())
+        root = location.upload_path;
+    else if (!location.root.empty())
+        root = location.root;
+    else
+        root = server.rootDef;                            // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
     std::string normUri = normalizeUri(request.getUri()); // защита от "../"
     //  Отрезаем префикс локации (alias-логика)
     const std::string &prefix = location.prefix;
@@ -111,7 +116,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
     std::string relPath;
     if (normUri.compare(0, realPrefix.length(), realPrefix) == 0)
         // Если URI начинается с нашего префикса
-        relPath = normUri.substr(realPrefix.length() - 1); //чтобы оставить ведущий “/”
+        relPath = normUri.substr(realPrefix.length() - 1); // чтобы оставить ведущий “/”
     else
         relPath = normUri; // На всякий случай, если не совпало — считаем весь URI относительным
     //  Склеиваем с root
@@ -178,7 +183,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
     response.setStatusCode(200);
     size_t pos = absPath.find_last_of(".");
     std::string ext = (pos != std::string::npos) ? absPath.substr(pos) : "";
-    const std::map<std::string, std::string>& mimes = getMimeTypes();
+    const std::map<std::string, std::string> &mimes = getMimeTypes();
     std::string mime = "application/octet-stream";
     if (mimes.count(ext))
         mime = mimes.at(ext);
@@ -205,14 +210,14 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
         prefix.erase(prefix.size() - 1);
 
-    std::string rel = request.getUri(); //Вычленяем из полного URI часть после префикса локации:/uploads/myfile.bin → myfile.bin
+    std::string rel = request.getUri(); // Вычленяем из полного URI часть после префикса локации:/uploads/myfile.bin → myfile.bin
     if (rel.rfind(prefix, 0) == 0)
         rel = rel.substr(prefix.length());
     if (!rel.empty() && rel[0] == '/')
         rel.erase(0, 1);
 
     std::string filename;
-    if (!rel.empty() && rel.find('/') == std::string::npos) //Если rel не содержит «/», это простое имя файла:оставляем только буквы, цифры, '.', '-' и '_'
+    if (!rel.empty() && rel.find('/') == std::string::npos) // Если rel не содержит «/», это простое имя файла:оставляем только буквы, цифры, '.', '-' и '_'
     {
         for (size_t i = 0; i < rel.size(); ++i)
         {
@@ -222,7 +227,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
         }
     }
 
-    if (filename.empty()) //Если клиент не задал имя → генерируем уникальное
+    if (filename.empty()) // Если клиент не задал имя → генерируем уникальное
     {
         static bool seeded = false;
         if (!seeded)
@@ -238,7 +243,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     std::string full_path = upload_dir;
     if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
         full_path += "/";
-    full_path += filename; //Собираем полный путь до файла
+    full_path += filename; // Собираем полный путь до файла
 
     if (access(full_path.c_str(), F_OK) == 0)
     {
