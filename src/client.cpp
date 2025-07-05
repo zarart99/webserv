@@ -4,8 +4,15 @@
 #include "HttpResponse.hpp"
 #include <cstdlib>
 
-Client::Client(int fd, ServerConfig *config)
-    : fd(fd), config(config), finished(false) {}
+Client::Client(int fd, ServerConfig *config, const std::string &ip = "0.0.0.0", int port = 80)
+    : fd(fd),
+      listen_fd(-1),
+      clientPort(port),
+      finished(false),
+      config(config),
+      clientIP(ip)
+{
+}
 
 Client::~Client() { close(fd); }
 

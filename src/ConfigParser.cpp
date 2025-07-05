@@ -26,6 +26,11 @@ ConfigParser & ConfigParser::operator=(ConfigParser const & src)
 	return *this;
 }
 
+std::vector<ListenStruct> ConfigParser::getUniqueListen() const
+{
+	return _uniqueListen;
+}
+
 ConfigParser::~ConfigParser() {}
 
 void trimmer(std::string & str)
