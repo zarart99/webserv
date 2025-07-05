@@ -3,8 +3,15 @@
 #include <sys/socket.h>
 #include "HttpResponse.hpp"
 
-Client::Client(int fd, ServerConfig *config, const std::string& ip = "0.0.0.0", int port = 80)
-        : fd(fd), config(config), finished(false), clientIP(ip), clientPort(port) {}
+Client::Client(int fd, ServerConfig *config, const std::string &ip, int port)
+    : fd(fd),
+      listen_fd(-1),
+      clientPort(port),
+      finished(false),
+      config(config),
+      clientIP(ip)
+{
+}
 
 Client::~Client() { close(fd); }
 

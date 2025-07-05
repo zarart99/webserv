@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstdio>
+#include <cstring>
 #include "HttpResponse.hpp"
 
 #define CLIENT_MAX_NUMBER 1000 
