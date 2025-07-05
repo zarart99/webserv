@@ -3,7 +3,7 @@
 #include <sys/socket.h>
 #include "HttpResponse.hpp"
 
-Client::Client(int fd, ServerConfig *config, const std::string &ip, int port)
+Client::Client(int fd, ServerConfig *config, const std::string &ip = "0.0.0.0", int port = 80)
     : fd(fd),
       listen_fd(-1),
       clientPort(port),
