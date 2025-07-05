@@ -197,21 +197,22 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     else
         upload_dir = server.rootDef;
 
-    if (upload_dir.empty())
+    if (upload_dir.empty()) // Если нет ни одной валидной директории ⇒ внутренняя ошибка конфигурации
         return _createErrorResponse(500, &server);
 
-    std::string prefix = location.prefix;
+    std::string prefix = location.prefix; //   Очищаем prefix от лишнего «/» в конце, чтобы избежать двойных слэшей при формировании Location
+
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
         prefix.erase(prefix.size() - 1);
 
-    std::string rel = request.getUri();
+    std::string rel = request.getUri(); //Вычленяем из полного URI часть после префикса локации:/uploads/myfile.bin → myfile.bin
     if (rel.rfind(prefix, 0) == 0)
         rel = rel.substr(prefix.length());
     if (!rel.empty() && rel[0] == '/')
         rel.erase(0, 1);
 
     std::string filename;
-    if (!rel.empty() && rel.find('/') == std::string::npos)
+    if (!rel.empty() && rel.find('/') == std::string::npos) //Если rel не содержит «/», это простое имя файла:оставляем только буквы, цифры, '.', '-' и '_'
     {
         for (size_t i = 0; i < rel.size(); ++i)
         {
@@ -221,7 +222,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
         }
     }
 
-    if (filename.empty())
+    if (filename.empty()) //Если клиент не задал имя → генерируем уникальное
     {
         static bool seeded = false;
         if (!seeded)
@@ -237,7 +238,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     std::string full_path = upload_dir;
     if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
         full_path += "/";
-    full_path += filename;
+    full_path += filename; //Собираем полный путь до файла
 
     if (access(full_path.c_str(), F_OK) == 0)
     {
@@ -253,7 +254,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
         do
         {
             std::ostringstream oss;
-            oss << base << "_" << counter << ext;
+            oss << base << "_" << counter << ext; // Если дубликация, добавляем счетчик
             filename = oss.str();
             full_path = upload_dir;
             if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
