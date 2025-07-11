@@ -12,7 +12,10 @@
 class HttpRequest
 {
 public:
+    HttpRequest();
+    HttpRequest(const HttpRequest &src);
     HttpRequest(const std::string &raw_request);
+    HttpRequest &operator=(const HttpRequest &src);
     ~HttpRequest();
 
     std::string getMethod() const;

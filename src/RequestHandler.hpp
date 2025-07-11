@@ -7,13 +7,16 @@
 
 class RequestHandler {
 public:
+    RequestHandler();
     RequestHandler(ConfigParser& config);
+    RequestHandler(const RequestHandler& src);
+    RequestHandler& operator=(const RequestHandler& src);
     ~RequestHandler();
 
     HttpResponse handleRequest(const HttpRequest& request, int serverPort, const std::string& serverHost);
 
 private:
-    ConfigParser& _config; 
+    ConfigParser* _config;
 
     HttpResponse _handleGet(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
     HttpResponse _handlePost(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);

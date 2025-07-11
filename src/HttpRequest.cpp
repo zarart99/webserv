@@ -48,10 +48,30 @@ static std::string decodeChunked(const std::string &in)
     return out;
 }
 
+HttpRequest::HttpRequest() {}
+
+HttpRequest::HttpRequest(const HttpRequest &src)
+{
+    *this = src;
+}
+
 HttpRequest::HttpRequest(const std::string &raw_request)
 {
 
     _parse(raw_request);
+}
+
+HttpRequest &HttpRequest::operator=(const HttpRequest &src)
+{
+    if (this != &src)
+    {
+        _method = src._method;
+        _uri = src._uri;
+        _http_version = src._http_version;
+        _headers = src._headers;
+        _body = src._body;
+    }
+    return *this;
 }
 
 HttpRequest::~HttpRequest() {}

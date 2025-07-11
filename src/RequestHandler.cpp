@@ -10,7 +10,23 @@
 #include <cstdlib>
 #include <cctype>
 
-RequestHandler::RequestHandler(ConfigParser &config) : _config(config) {}
+RequestHandler::RequestHandler() : _config(NULL) {}
+
+RequestHandler::RequestHandler(ConfigParser &config) : _config(&config) {}
+
+RequestHandler::RequestHandler(const RequestHandler &src)
+{
+    *this = src;
+}
+
+RequestHandler &RequestHandler::operator=(const RequestHandler &src)
+{
+    if (this != &src)
+    {
+        _config = src._config;
+    }
+    return *this;
+}
 
 RequestHandler::~RequestHandler() {}
 
@@ -351,7 +367,9 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerCo
 
 const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string &host) const
 {
-    const std::vector<ServerConfig> &servers = _config.getServers(); // Миш, мне тут нужен геттер типа return this->_configServ
+    if (!_config)
+        return NULL;
+    const std::vector<ServerConfig> &servers = _config->getServers(); // Миш, мне тут нужен геттер типа return this->_configServ
     const ServerConfig *default_server_for_port = NULL;
 
     for (size_t i = 0; i < servers.size(); ++i)
