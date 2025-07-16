@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <cstdio>
 #include "HttpResponse.hpp"
-#include "Cgi.hpp"
 
 Server::Server(ConfigParser &parser)
     : cfg(parser),
@@ -107,14 +106,19 @@ void Server::handlePollEvents()
                 std::string ip = "127.0.0.1"; //Заглушки
                 std::string host;
                 if (req.getHeaders().count("host"))
-                    host = req.getHeaders().at("host");
-
-                Cgi script(cfg, port, ip, host);
-                RequestHandler handler(cfg);
-                if (script.isCgi(req.getUri))
                 {
-                    script.cgiHandler()
-                    clients[fd]->setResponse(resp.buildResponse());
+                    host = req.getHeaders().at("host");
+                    size_t pos = host.find_first_of(':');//Имя домена должно быть без порт 
+                    if (pos != std::string::npos)
+                        host = host.substr(0, pos);
+                }
+                
+                Cgi script(cfg, req, port, ip, host);
+                RequestHandler handler(cfg);
+                if (script.isCgi(req.getUri()))
+                {
+                    std::string response = script.cgiHandler();
+                    clients[fd]->setResponse(response);
                 }
                 else
                 {

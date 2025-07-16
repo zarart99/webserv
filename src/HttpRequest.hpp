@@ -12,6 +12,7 @@
 class HttpRequest
 {
 public:
+    HttpRequest();
     HttpRequest(const std::string &raw_request);
     ~HttpRequest();
 

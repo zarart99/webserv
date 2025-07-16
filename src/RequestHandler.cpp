@@ -3,7 +3,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-RequestHandler::RequestHandler(ConfigParser &config) : _config(config) {}
+RequestHandler::RequestHandler() {}
+
+RequestHandler::RequestHandler(const ConfigParser &config) : _config(config) {}
 
 RequestHandler::~RequestHandler() {}
 

@@ -25,7 +25,7 @@ static std::string toLower(std::string s)
     return s;
 }
 
-
+HttpRequest::HttpRequest() {}
 
 HttpRequest::HttpRequest(const std::string &raw_request)
 {
