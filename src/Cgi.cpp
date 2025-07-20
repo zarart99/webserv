@@ -230,12 +230,6 @@ void Cgi::findArgsExecve(void)//В этой функции готовим арг
         _exec_args.argv_strings.push_back("python3");
         _exec_args.argv_strings.push_back(_exec_args.path_script);
     }
-    else if (_exec_args.cgi_ext  == ".pl")
-    {
-        _exec_args.interpreter = "/usr/bin/perl";
-        _exec_args.argv_strings.push_back("perl");
-        _exec_args.argv_strings.push_back(_exec_args.path_script);
-    }
     else if (_exec_args.cgi_ext  == ".cgi")
     {
         _exec_args.interpreter = _exec_args.path_script;
