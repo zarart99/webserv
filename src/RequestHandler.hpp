@@ -8,7 +8,7 @@
 class RequestHandler {
 public:
     RequestHandler();
-    RequestHandler(ConfigParser& config);
+    RequestHandler(const ConfigParser& config);
     RequestHandler(const RequestHandler& src);
     RequestHandler& operator=(const RequestHandler& src);
     ~RequestHandler();
@@ -20,7 +20,7 @@ protected:
     const LocationStruct* _findLocationFor(const ServerConfig& server, const std::string& uri) const;
 
 private:
-    ConfigParser* _config;
+    const ConfigParser* _config;
 
     HttpResponse _handleGet(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
     HttpResponse _handlePost(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);

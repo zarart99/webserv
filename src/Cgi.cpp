@@ -151,10 +151,10 @@ std::string  Cgi::findPathInfo(void)
 
 void Cgi::createCgiEnvp(void)
 {
-    _server = _findServerConfig(_data_rec.port _data_rec.ip, _data_rec.host);
+    _server = _findServerConfig(_data_rec.port, _data_rec.ip, _data_rec.host);
     if (_server == NULL)
         throw std::runtime_error("500 Internal Server Error");
-        
+
     std::string query = findQuery();
 
     /*Блок поиска заголовков content-type и content_type*/

@@ -265,6 +265,7 @@ void Server::processRequest(int fd)
 
     Cgi script(cfg, req, clients[fd]->getClientPort(), clients[fd]->getClientIP(), host);
     HttpResponse resp;
+    std::cout << "isCgi //" << "port " << clients[fd]->getClientPort() << "ip " << clients[fd]->getClientIP() << "listen_fd" << listen_fd << std::endl;
     if (script.isCgi(req.getUri()))
     {
         // Обрабатываем cgi запрос 
@@ -275,7 +276,7 @@ void Server::processRequest(int fd)
     {
         // Обрабатываем обычный запрос     
         RequestHandler handler(cfg);
-        resp = handler.handleRequest(req, clients[fd], clients[fd]->getClientPort(), host);
+        resp = handler.handleRequest(req, clients[fd]->getClientPort(), clients[fd]->getClientIP(), host);
 
         // Устанавливаем ответ
         clients[fd]->setResponse(resp.buildResponse());

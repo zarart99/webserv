@@ -12,7 +12,7 @@
 
 RequestHandler::RequestHandler() : _config(NULL) {}
 
-RequestHandler::RequestHandler(ConfigParser &config) : _config(&config) {}
+RequestHandler::RequestHandler(const ConfigParser &config) : _config(&config) {}
 
 RequestHandler::RequestHandler(const RequestHandler &src)
 {
