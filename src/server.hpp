@@ -23,12 +23,14 @@ private:
     void handlePollEvents();
     void acceptNewClient(int listen_fd);
     void removeClient(int client_fd);
+    const ServerConfig* findMatchingConfig(const std::vector<ServerConfig>& configs, std::string host);
+    void processRequest(int fd);
 
     ConfigParser &cfg;                              
     const std::vector<ServerConfig> &server_configs;
 
     std::vector<struct pollfd> fds;
-    std::map<int, ServerConfig> listenConfigs;
     std::map<int, Client *> clients;
+    std::map<int, std::vector<ServerConfig> > listenConfigs;
 };
 #endif // SERVER_HPP

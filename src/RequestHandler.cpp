@@ -1,11 +1,32 @@
 #include "RequestHandler.hpp"
 #include "ConfigParser.hpp"
+#include "utils.hpp"
+#include "MimeTypes.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fstream>
+#include <sstream>
+#include <ctime>
+#include <cstdlib>
+#include <cctype>
 
-RequestHandler::RequestHandler() {}
+RequestHandler::RequestHandler() : _config(NULL) {}
 
-RequestHandler::RequestHandler(const ConfigParser &config) : _config(config) {}
+RequestHandler::RequestHandler(ConfigParser &config) : _config(&config) {}
+
+RequestHandler::RequestHandler(const RequestHandler &src)
+{
+    *this = src;
+}
+
+RequestHandler &RequestHandler::operator=(const RequestHandler &src)
+{
+    if (this != &src)
+    {
+        _config = src._config;
+    }
+    return *this;
+}
 
 RequestHandler::~RequestHandler() {}
 
@@ -95,11 +116,34 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
-    std::string root = !location.root.empty() ? location.root : server.rootDef;
-    std::string path = root + request.getUri();
+    std::string root;
+    if (!location.upload_path.empty())
+        root = location.upload_path;
+    else if (!location.root.empty())
+        root = location.root;
+    else
+        root = server.rootDef;                            // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string normUri = normalizeUri(request.getUri()); // защита от "../"
+    //  Отрезаем префикс локации (alias-логика)
+    const std::string &prefix = location.prefix;
+    // Удостоверимся, что prefix заканчивается на “/”, иначе поставим его
+    std::string realPrefix = (!prefix.empty() && prefix[prefix.length() - 1] == '/') ? prefix : prefix + "/";
+
+    std::string relPath;
+    if (normUri.compare(0, realPrefix.length(), realPrefix) == 0)
+        // Если URI начинается с нашего префикса
+        relPath = normUri.substr(realPrefix.length() - 1); // чтобы оставить ведущий “/”
+    else
+        relPath = normUri; // На всякий случай, если не совпало — считаем весь URI относительным
+    //  Склеиваем с root
+    std::string absPath = root + relPath;
+
+    // проверяем, что мы не выходим за пределы root
+    if (absPath.rfind(root + "/", 0) != 0)
+        return _createErrorResponse(403, &server); // на самом деле сюда не попадем, т.к. normalizeUri защищает от "../", но на всякий случай
 
     struct stat path_stat;
-    if (stat(path.c_str(), &path_stat) != 0)
+    if (stat(absPath.c_str(), &path_stat) != 0)
     {
         return _createErrorResponse(404, &server); // Путь не существует
     }
@@ -112,7 +156,7 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         std::string found_index_path = "";
         for (size_t i = 0; i < index_files.size(); ++i)
         {
-            std::string temp_path = path + (path[path.length() - 1] == '/' ? "" : "/") + index_files[i];
+            std::string temp_path = absPath + (absPath[absPath.length() - 1] == '/' ? "" : "/") + index_files[i];
             if (access(temp_path.c_str(), F_OK) == 0)
             {
                 found_index_path = temp_path;
@@ -121,21 +165,29 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         if (!found_index_path.empty())
         {
-            path = found_index_path; // Нашли индекс, будем отдавать его
+            absPath = found_index_path; // Нашли индекс, будем отдавать его
+        }
+        else if (location.autoindex)
+        {
+            std::string listing = generateAutoindex(absPath, normUri); // Нет index, но включён autoindex on → генерируем HTML-листинг
+            HttpResponse response;
+            response.setStatusCode(200);
+            response.addHeader("Content-Type", "text/html; charset=utf-8");
+            response.setBody(listing);
+            return response;
         }
         else
         {
-            // TODO: Проверить autoindex. Пока просто возвращаем ошибку.
-            return _createErrorResponse(403, &server);
+            return _createErrorResponse(403, &server); // index нет и autoindex off — 403
         }
     }
 
-    if (access(path.c_str(), R_OK) != 0)
+    if (access(absPath.c_str(), R_OK) != 0)
     {
         return _createErrorResponse(403, &server);
     }
 
-    std::ifstream file(path.c_str(), std::ios::binary);
+    std::ifstream file(absPath.c_str(), std::ios::binary);
     if (!file.is_open())
     {
         return _createErrorResponse(500, &server);
@@ -145,20 +197,95 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 
     HttpResponse response;
     response.setStatusCode(200);
-    // TODO:
-    response.addHeader("Content-Type", "text/plain"); // Миш, я тут хз как определять MIME-тип. Пока хардкод
+    size_t pos = absPath.find_last_of(".");
+    std::string ext = (pos != std::string::npos) ? absPath.substr(pos) : "";
+    const std::map<std::string, std::string> &mimes = getMimeTypes();
+    std::string mime = "application/octet-stream";
+    if (mimes.count(ext))
+        mime = mimes.at(ext);
+    response.addHeader("Content-Type", mime);
     response.setBody(body);
     return response;
 }
 
 HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    // Миша, где хранится путь для загрузок (upload_path) ?
-    // Пока использую root.
-    std::string upload_dir = !location.root.empty() ? location.root : server.rootDef;
-    std::string path = upload_dir + "/uploaded_file.tmp";
+    std::string upload_dir;
+    if (!location.upload_path.empty())
+        upload_dir = location.upload_path;
+    else if (!location.root.empty())
+        upload_dir = location.root;
+    else
+        upload_dir = server.rootDef;
 
-    std::ofstream file(path.c_str(), std::ios::out | std::ios::binary);
+    if (upload_dir.empty()) // Если нет ни одной валидной директории ⇒ внутренняя ошибка конфигурации
+        return _createErrorResponse(500, &server);
+
+    std::string prefix = location.prefix; //   Очищаем prefix от лишнего «/» в конце, чтобы избежать двойных слэшей при формировании Location
+
+    if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
+        prefix.erase(prefix.size() - 1);
+
+    std::string rel = request.getUri(); // Вычленяем из полного URI часть после префикса локации:/uploads/myfile.bin → myfile.bin
+    if (rel.rfind(prefix, 0) == 0)
+        rel = rel.substr(prefix.length());
+    if (!rel.empty() && rel[0] == '/')
+        rel.erase(0, 1);
+
+    std::string filename;
+    if (!rel.empty() && rel.find('/') == std::string::npos) // Если rel не содержит «/», это простое имя файла:оставляем только буквы, цифры, '.', '-' и '_'
+    {
+        for (size_t i = 0; i < rel.size(); ++i)
+        {
+            char c = rel[i];
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.')
+                filename += c;
+        }
+    }
+
+    if (filename.empty()) // Если клиент не задал имя → генерируем уникальное
+    {
+        static bool seeded = false;
+        if (!seeded)
+        {
+            std::srand(std::time(NULL));
+            seeded = true;
+        }
+        std::ostringstream oss;
+        oss << std::time(NULL) << "_" << std::rand() << ".bin";
+        filename = oss.str();
+    }
+
+    std::string full_path = upload_dir;
+    if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
+        full_path += "/";
+    full_path += filename; // Собираем полный путь до файла
+
+    if (access(full_path.c_str(), F_OK) == 0)
+    {
+        std::string base = filename;
+        std::string ext;
+        size_t dot = filename.find_last_of('.');
+        if (dot != std::string::npos)
+        {
+            base = filename.substr(0, dot);
+            ext = filename.substr(dot);
+        }
+        int counter = 1;
+        do
+        {
+            std::ostringstream oss;
+            oss << base << "_" << counter << ext; // Если дубликация, добавляем счетчик
+            filename = oss.str();
+            full_path = upload_dir;
+            if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
+                full_path += "/";
+            full_path += filename;
+            ++counter;
+        } while (access(full_path.c_str(), F_OK) == 0);
+    }
+
+    std::ofstream file(full_path.c_str(), std::ios::binary);
     if (!file.is_open())
     {
         return _createErrorResponse(500, &server);
@@ -167,13 +294,14 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     if (file.fail())
     {
         file.close();
-        return _createErrorResponse(500, &server); // Ошибка записи на диск
+        return _createErrorResponse(500, &server);
     }
     file.close();
 
     HttpResponse response;
-    response.setStatusCode(201); // Created
-    response.addHeader("Location", path);
+    response.setStatusCode(201);
+    std::string loc_hdr = prefix + "/" + filename;
+    response.addHeader("Location", loc_hdr);
     return response;
 }
 
@@ -201,7 +329,7 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
     return response;
 }
 
-HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string>* allowed_methods)
+HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods)
 {
     HttpResponse response;
     response.setStatusCode(statusCode);
@@ -239,7 +367,9 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerCo
 
 const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string& ip, const std::string &host) const
 {
-    const std::vector<ServerConfig> &servers = _config.getServers();
+    if (!_config)
+        return NULL;
+    const std::vector<ServerConfig> &servers = _config->getServers();
     const ServerConfig *default_server_for_port = NULL;
     bool isDefault = false;
 

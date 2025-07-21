@@ -2,6 +2,23 @@
 #include <sstream>
 
 HttpResponse::HttpResponse() : _statusCode(200), _statusMessage("OK") {}
+
+HttpResponse::HttpResponse(const HttpResponse &src)
+{
+    *this = src;
+}
+
+HttpResponse &HttpResponse::operator=(const HttpResponse &src)
+{
+    if (this != &src)
+    {
+        _statusCode = src._statusCode;
+        _statusMessage = src._statusMessage;
+        _headers = src._headers;
+        _body = src._body;
+    }
+    return *this;
+}
 HttpResponse::~HttpResponse() {}
 
 void HttpResponse::setStatusMessage(const std::string& message) { _statusMessage = message; }

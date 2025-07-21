@@ -5,9 +5,7 @@ Cgi::Cgi(): RequestHandler() {}
 
 Cgi::Cgi(ConfigParser& config, HttpRequest request, int port, std::string ip, const std::string& host): RequestHandler(config), _config(config)
 {
-    this->_server = _findServerConfig(port, ip, host);
-    if (this->_server == NULL)
-        throw std::runtime_error("500 Internal Server Error");
+    this->_server = NULL;
     this->_data_rec.req = request;
     this->_data_rec.host = host;
     this->_data_rec.ip = ip;
@@ -153,6 +151,10 @@ std::string  Cgi::findPathInfo(void)
 
 void Cgi::createCgiEnvp(void)
 {
+    _server = _findServerConfig(_data_rec.port _data_rec.ip, _data_rec.host);
+    if (_server == NULL)
+        throw std::runtime_error("500 Internal Server Error");
+        
     std::string query = findQuery();
 
     /*Блок поиска заголовков content-type и content_type*/
@@ -210,6 +212,11 @@ void Cgi::printEnvpCgi(void)
 char** Cgi::getEnvp(void)
 {
     return &_exec_args.envs_ptrs[0];
+}
+
+const ServerConfig* Cgi::getServer() const
+{
+    return _server;
 }
 
 void Cgi::findArgsExecve(void)//В этой функции готовим аргументы для execve

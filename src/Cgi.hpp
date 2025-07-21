@@ -57,6 +57,7 @@ class Cgi : public RequestHandler
 	std::string cgiHandler(void);
 	std::string composeErrorResponse(const std::string& error);
 	std::string executeScript(void);
+	const ServerConfig* getServer() const;
 	void findArgsExecve(void);
 	void printEnvpCgi(void);
 	char** getEnvp(void);

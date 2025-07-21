@@ -9,6 +9,8 @@ class HttpResponse
 {
 public:
     HttpResponse();
+    HttpResponse(const HttpResponse &src);
+    HttpResponse &operator=(const HttpResponse &src);
     ~HttpResponse();
 
     void setStatusCode(int code);

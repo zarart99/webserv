@@ -6,7 +6,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstdio>
+#include <cstring>
 #include "HttpResponse.hpp"
+
+#define CLIENT_MAX_NUMBER 1000 
 
 Server::Server(ConfigParser &parser)
     : cfg(parser),
@@ -23,32 +26,114 @@ Server::~Server()
         delete it->second;
 }
 
+const ServerConfig* Server::findMatchingConfig(const std::vector<ServerConfig>& configs, std::string host)
+{
+    // Проверка на пустой вектор
+    if (configs.empty())
+        return NULL; // В C++98 используем NULL вместо nullptr
+    
+    // Удаляем порт из хоста, если он есть
+    size_t pos = host.find(':');
+    if (pos != std::string::npos)
+        host = host.substr(0, pos);
+    
+    // Если имя хоста пустое, используем первую конфигурацию
+    if (host.empty())
+        return &configs[0];
+    
+    // Ищем совпадение по server_name
+    for (size_t i = 0; i < configs.size(); ++i) {
+        for (size_t j = 0; j < configs[i].server_name.size(); ++j) {
+            if (configs[i].server_name[j] == host)
+                return &configs[i];
+        }
+    }
+    
+    // Если совпадений нет, используем первую конфигурацию
+    return &configs[0];
+}
+
+int setupSocket() {
+    // Создаем сокет
+    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd < 0) {
+        std::cerr << "Ошибка при создании сокета: " << strerror(errno) << std::endl;
+        return -1;
+    }
+    
+    // Устанавливаем опцию повторного использования адреса
+    int opt = 1;
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        std::cerr << "Ошибка setsockopt(SO_REUSEADDR): " << strerror(errno) << std::endl;
+    }
+    
+    // Устанавливаем неблокирующий режим
+    fcntl(listen_fd, F_SETFL, O_NONBLOCK);
+    
+    return listen_fd;
+}
+
 void Server::initListeners(const std::vector<ServerConfig> &configs)
 {
-    for (size_t i = 0; i < configs.size(); ++i)
+    // Получаем уникальные листенеры из парсера
+    std::vector<ListenStruct> uniqueListeners = cfg.getUniqueListen();
+    
+    for (size_t i = 0; i < uniqueListeners.size(); ++i)
     {
-        const std::vector<ListenStruct> &listenVec = configs[i].listen;
-        for (size_t j = 0; j < listenVec.size(); ++j)
-        {
-            int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-            fcntl(listen_fd, F_SETFL, O_NONBLOCK);
+        const ListenStruct& listenInfo = uniqueListeners[i];
 
-            struct sockaddr_in addr;
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(listenVec[j].port);
-            addr.sin_addr.s_addr = inet_addr(listenVec[j].ip.c_str());
-
-            bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr));
-            listen(listen_fd, 100);
-
-            struct pollfd pfd;
-            pfd.fd = listen_fd;
-            pfd.events = POLLIN;
-            pfd.revents = 0;
-            fds.push_back(pfd);
-
-            listenConfigs[listen_fd] = configs[i];
+        // создание и настройка сокета
+        int listen_fd = setupSocket();
+        if (listen_fd < 0) {
+            continue;
         }
+
+        // Настраиваем адрес
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(listenInfo.port);
+        addr.sin_addr.s_addr = inet_addr(listenInfo.ip.c_str());
+
+        // Привязываем сокет к адресу и порту
+        if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            std::cerr << "Ошибка bind на " << listenInfo.ip << ":" 
+                      << listenInfo.port << ": " << strerror(errno) << std::endl;
+            close(listen_fd);
+            continue;
+        }
+        
+        // Переводим сокет в режим прослушивания
+        if (listen(listen_fd, 100) < 0) {
+            std::cerr << "Ошибка listen на " << listenInfo.ip << ":" 
+                      << listenInfo.port << ": " << strerror(errno) << std::endl;
+            close(listen_fd);
+            continue;
+        }
+
+        // Добавляем в структуру poll
+        struct pollfd pfd;
+        pfd.fd = listen_fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        fds.push_back(pfd);
+        
+        std::cout << "Сервер слушает на " << listenInfo.ip << ":" << listenInfo.port << std::endl;
+
+        // Находим все конфигурации серверов, которые слушают на этом IP:порт
+        for (size_t j = 0; j < configs.size(); ++j) {
+            for (size_t k = 0; k < configs[j].listen.size(); ++k) {
+                if (configs[j].listen[k].ip == listenInfo.ip && 
+                    configs[j].listen[k].port == listenInfo.port) {
+                    // Связываем сокет с конфигурацией сервера
+                    listenConfigs[listen_fd].push_back(configs[j]);
+                    break; // Достаточно одного совпадения для этой конфигурации
+                }
+            }
+        }
+    }
+    
+    if (fds.empty()) {
+        throw std::runtime_error("Не удалось инициализировать ни один слушающий сокет");
     }
 }
 
@@ -79,90 +164,131 @@ void Server::run()
 
 void Server::handlePollEvents()
 {
-    for (size_t i = 0; i < fds.size(); ++i)
-    {
+    for (size_t i = 0; i < fds.size(); ++i) {
         int fd = fds[i].fd;
-
-        /* Новое соединение */
-        if ((fds[i].revents & POLLIN) && listenConfigs.count(fd))
-        {
+        
+        // Новое соединение
+        if ((fds[i].revents & POLLIN) && listenConfigs.count(fd)) {
             acceptNewClient(fd);
             continue;
         }
-
-        /* Данные от существующего клиента */
-        if ((fds[i].revents & POLLIN) && clients.count(fd))
-        {
-            clients[fd]->handleRead(); // ← вернули!
-
-            if (clients[fd]->isRequestReady() &&
-                clients[fd]->getWriteBuffer().empty())
-            {
-                /* 1. создаём HttpRequest */
-                HttpRequest req(clients[fd]->getReadBuffer());
-
-                /* 2. порт и Host */
-                int port = 8001; //Заглушки
-                std::string ip = "127.0.0.1"; //Заглушки
-                std::string host;
-                if (req.getHeaders().count("host"))
-                {
-                    host = req.getHeaders().at("host");
-                    size_t pos = host.find_first_of(':');//Имя домена должно быть без порт 
-                    if (pos != std::string::npos)
-                        host = host.substr(0, pos);
-                }
-                
-                Cgi script(cfg, req, port, ip, host);
-                RequestHandler handler(cfg);
-                if (script.isCgi(req.getUri()))
-                {
-                    std::string response = script.cgiHandler();
-                    clients[fd]->setResponse(response);
-                }
-                else
-                {
-                    HttpResponse resp = handler.handleRequest(req, port, ip, host);
-                    clients[fd]->setResponse(resp.buildResponse());
-                }
+        
+        // Чтение от клиента
+        if ((fds[i].revents & POLLIN) && clients.count(fd)) {
+            clients[fd]->handleRead();
+            
+            // Если запрос готов и буфер записи пуст
+            if (clients[fd]->isRequestReady() && clients[fd]->getWriteBuffer().empty()) {
+                processRequest(fd);
             }
         }
-
-        /* запись в сокет */
+        
+        // Запись клиенту
         if ((fds[i].revents & POLLOUT) && clients.count(fd))
             clients[fd]->handleWrite();
     }
-    /* удаляем завершённых клиентов … */
-
-    for (size_t i = 0; i < fds.size();)
-    {
+    
+    // Удаляем завершенных клиентов
+    for (size_t i = 0; i < fds.size();) {
         int fd = fds[i].fd;
         if (clients.count(fd) && clients[fd]->isDone())
-        {
             removeClient(fd);
-        }
         else
-        {
             ++i;
-        }
     }
 }
 
 void Server::acceptNewClient(int listen_fd)
 {
-    int client_fd = accept(listen_fd, NULL, NULL);
+    struct sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    
+    int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
     if (client_fd < 0)
         return;
+        
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
-    struct pollfd pfd = {client_fd, POLLIN | POLLOUT, 0};
+    
+    // Получаем IP и порт клиента
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+    int client_port = ntohs(client_addr.sin_port);
+    
+    // Добавляем в poll
+    struct pollfd pfd;
+    pfd.fd = client_fd;
+    pfd.events = POLLIN | POLLOUT;
+    pfd.revents = 0;
     fds.push_back(pfd);
+    // Проверяем лимит клиентов - для C++98
+    if (clients.size() >= CLIENT_MAX_NUMBER) {
+        close(client_fd);
+        std::cout << "Достигнут максимальный лимит клиентов" << std::endl;
+        return;
+    }    
+    // Используем первую конфигурацию до получения Host
+    if (!listenConfigs[listen_fd].empty()) {
+        clients[client_fd] = new Client(client_fd, &listenConfigs[listen_fd][0], 
+                                       client_ip, client_port);
+        clients[client_fd]->setListenFd(listen_fd);
+        std::cout << "Соединение: " << client_ip << ":" << client_port << std::endl;
+    } else {
+        close(client_fd);
+        // Удаляем из fds
+        for (std::vector<struct pollfd>::iterator it = fds.begin(); it != fds.end(); ++it) {
+            if (it->fd == client_fd) {
+                fds.erase(it);
+                break;
+            }
+        }
+    }
+}
 
-    ServerConfig *config = &listenConfigs[listen_fd];
-    clients[client_fd] = new Client(client_fd, config);
+void Server::processRequest(int fd)
+{
+    HttpRequest req(clients[fd]->getReadBuffer());
+    
+    // Получаем host из заголовков
+    std::string host;
+    if (req.getHeaders().count("host"))
+        host = req.getHeaders().at("host");
+    
+    // Получаем listen_fd и находим подходящую конфигурацию
+    int listen_fd = clients[fd]->getListenFd();
+//    const ServerConfig* config = findMatchingConfig(listenConfigs[listen_fd], host);//По как что убрал , переделай если он тебе где то нужнен либо удали
+    
+    // Проверяем, что есть действительная конфигурация
+ //   if (config != NULL) { //Саня я пока что убрал это так как не знаю тебе нужен в твоем коде сервер из конфига или нет? плюс твоя функция которая ищет сервер не совсем корректно работает
+        // Используем const_cast, поскольку updateConfig ожидает не-константный указатель
+        // Это безопасно, так как мы не изменяем саму конфигурацию внутри Client
+//        clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
+
+    Cgi script(cfg, req, clients[fd]->getClientPort(), clients[fd]->getClientIP(), host);
+    HttpResponse resp;
+    if (script.isCgi(req.getUri()))
+    {
+        // Обрабатываем cgi запрос 
+        std::string response = script.cgiHandler();
+        clients[fd]->setResponse(response);
+    }
+    else
+    {
+        // Обрабатываем обычный запрос     
+        RequestHandler handler(cfg);
+        resp = handler.handleRequest(req, clients[fd], clients[fd]->getClientPort(), host);
+
+        // Устанавливаем ответ
+        clients[fd]->setResponse(resp.buildResponse());
+    }
+//    }
 }
 
 void Server::removeClient(int client_fd)
 {
+    std::cout << "Закрытие соединения: fd=" << client_fd 
+    << " (" << clients[client_fd]->getClientIP() 
+    << ":" << clients[client_fd]->getClientPort() << ")" << std::endl;
+
     close(client_fd);
     delete clients[client_fd];
     clients.erase(client_fd);
@@ -176,112 +302,3 @@ void Server::removeClient(int client_fd)
         }
     }
 }
-
-// #include <iostream>
-// #include <vector>
-// #include <cstring>
-// #include <cerrno>
-// #include <unistd.h>
-// #include <fcntl.h>
-// #include <arpa/inet.h>
-// #include <sys/socket.h>
-// #include <poll.h>
-// #include "HttpResponse.hpp"
-// #include "HttpRequest.hpp"
-
-// #define PORT 8080
-// #define BUFFER_SIZE 1024
-
-// int make_socket_non_blocking(int fd) {
-//     int flags = fcntl(fd, F_GETFL, 0);
-//     if (flags < 0) return -1;
-//     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-// }
-
-// int main() {
-//     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-//     if (server_fd < 0) {
-//         perror("socket");
-//         return 1;
-//     }
-
-//     make_socket_non_blocking(server_fd);
-
-//     int opt = 1;
-//     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-//     struct sockaddr_in addr;
-//     std::memset(&addr, 0, sizeof(addr));
-//     addr.sin_family = AF_INET;
-//     addr.sin_port = htons(PORT);
-//     addr.sin_addr.s_addr = INADDR_ANY;
-
-//     if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-//         perror("bind");
-//         return 1;
-//     }
-
-//     if (listen(server_fd, 5) < 0) {
-//         perror("listen");
-//         return 1;
-//     }
-
-//     std::vector<struct pollfd> fds;
-//     struct pollfd server_pollfd;
-//     server_pollfd.fd = server_fd;
-//     server_pollfd.events = POLLIN;
-//     fds.push_back(server_pollfd);
-
-//     std::cout << "Listening on port " << PORT << "...\n";
-
-//     char buffer[BUFFER_SIZE];
-
-//     while (true) {
-//         int ready = poll(&fds[0], fds.size(), -1);
-//         if (ready < 0) {
-//             perror("poll");
-//             break;
-//         }
-
-//         for (size_t i = 0; i < fds.size(); ++i) {
-//             if (fds[i].revents & POLLIN) {
-//                 if (fds[i].fd == server_fd) {
-//                     int client_fd = accept(server_fd, NULL, NULL);
-//                     if (client_fd >= 0) {
-//                         make_socket_non_blocking(client_fd);
-//                         struct pollfd client_pollfd;
-//                         client_pollfd.fd = client_fd;
-//                         client_pollfd.events = POLLIN;
-//                         fds.push_back(client_pollfd);
-//                         std::cout << "New client connected: fd " << client_fd << "\n";
-//                     }
-//                 } else {
-//                     int client_fd = fds[i].fd;
-//                     int len = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-//                     if (len <= 0) {
-//                         std::cout << "Client disconnected: fd " << client_fd << "\n";
-//                         close(client_fd);
-//                         fds.erase(fds.begin() + i);
-//                         --i;
-//                         continue;
-//                     }
-
-//                     buffer[len] = '\0';
-//                     std::string raw_request(buffer);
-//                     HttpResponse res = handle_http_request(raw_request);
-//                     std::string response = res.buildResponse();
-
-//                     send(client_fd, response.c_str(), response.size(), 0);
-//                     close(client_fd);  // закрываем, потому что Connection: close
-//                     fds.erase(fds.begin() + i);
-//                     --i;
-//                 }
-//             }
-//         }
-//     }
-
-//     for (size_t i = 0; i < fds.size(); ++i)
-//         close(fds[i].fd);
-
-//     return 0;
-// }
