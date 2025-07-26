@@ -4,6 +4,7 @@
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
 #include "ConfigParser.hpp"
+#include "utils.hpp"
 
 struct MultipartPart {
     std::string name;

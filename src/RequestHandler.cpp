@@ -12,23 +12,6 @@
 #include <map>
 #include <vector>
 
-static std::string trim(const std::string &s)
-{
-    const std::string WHITESPACE = " \t\r\n";
-    size_t first = s.find_first_not_of(WHITESPACE);
-    if (first == std::string::npos)
-        return "";
-    size_t last = s.find_last_not_of(WHITESPACE);
-    return s.substr(first, last - first + 1);
-}
-
-static std::string toLowerStr(std::string s)
-{
-    for (size_t i = 0; i < s.size(); ++i)
-        s[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
-    return s;
-}
-
 std::vector<MultipartPart> parseMultipart(const std::string &rawBody, const std::string &boundary)
 {
     std::vector<MultipartPart> parts;
@@ -66,7 +49,7 @@ std::vector<MultipartPart> parseMultipart(const std::string &rawBody, const std:
             size_t colon = line.find(':');
             if (colon == std::string::npos)
                 throw std::runtime_error("bad header line");
-            std::string key = toLowerStr(trim(line.substr(0, colon)));
+            std::string key = toLower(trim(line.substr(0, colon)));
             std::string value = trim(line.substr(colon + 1));
             if (key == "content-disposition")
             {
@@ -319,7 +302,7 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
     if (it != request.getHeaders().end())
     {
-        std::string ct_lower = toLowerStr(it->second);
+        std::string ct_lower = toLower(it->second);
         if (ct_lower.find("multipart/form-data") == 0 && ct_lower.find("boundary=") != std::string::npos)
             return _handleMultipart(request, location, server);
     }
@@ -356,6 +339,98 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
     HttpResponse response;
     response.setStatusCode(201);
     response.addHeader("Location", prefix + "/" + filename);
+    return response;
+}
+
+HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
+{
+    std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
+    if (it == request.getHeaders().end())
+        return _createErrorResponse(400, &server);
+
+    std::string ct = it->second;
+    std::string lower = toLower(ct);
+    size_t bpos = lower.find("boundary="); // Извлекаем параметр boundary из заголовка
+    if (bpos == std::string::npos)
+        return _createErrorResponse(400, &server);
+    std::string boundary = ct.substr(bpos + 9);
+    boundary = trim(boundary);
+    if (!boundary.empty() && boundary[0] == '"') // — если boundary в кавычках, убираем их
+    {
+        boundary.erase(0, 1);
+        size_t q = boundary.find('"');
+        if (q != std::string::npos)
+            boundary = boundary.substr(0, q);
+    }
+    else // — если после boundary идут дополнительные параметры, отсекаем всё после ';'
+    {
+        size_t sc = boundary.find(';');
+        if (sc != std::string::npos)
+            boundary = boundary.substr(0, sc);
+    }
+    if (boundary.empty())
+        return _createErrorResponse(400, &server);
+
+    std::vector<MultipartPart> parts; // Разбираем всё тело на отдельные части по найденному boundary
+    try
+    {
+        parts = parseMultipart(request.getBody(), boundary);
+    }
+    catch (const std::exception &)
+    {
+        return _createErrorResponse(400, &server);
+    }
+
+    std::vector<std::string> uploadedFiles; // Контейнеры: для сохранённых файлов и для полей формы
+    std::map<std::string, std::string> formFields;
+
+    for (size_t i = 0; i < parts.size(); ++i) // Обрабатываем каждую часть multipart
+
+    {
+        if (!parts[i].filename.empty()) // Часть с filename — значит, это файл. Сохраняем его.
+        {
+            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, location, server);
+            if (fname.empty())
+                return _createErrorResponse(500, &server);
+            std::string prefix = location.prefix; // Формируем URL доступа (удаляем хвостовой '/')
+
+            if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
+                prefix.erase(prefix.size() - 1);
+            uploadedFiles.push_back(prefix + "/" + fname);
+        }
+        else // Часть без filename — текстовое поле формы. Сохраняем в map
+        {
+            formFields[parts[i].name] = parts[i].body;
+        }
+    }
+
+    HttpResponse response;
+    if (uploadedFiles.size() == 1 && formFields.empty()) // Если только один файл и нет полей формы, возвращаем 201 с Location
+    {
+        response.setStatusCode(201);
+        response.addHeader("Location", uploadedFiles[0]);
+        return response;
+    }
+
+    response.setStatusCode(200); // Если есть и файлы, и поля формы, возвращаем 200 с JSON-ответом
+    response.addHeader("Content-Type", "application/json; charset=utf-8");
+    std::stringstream body;
+    body << "{\n  \"files\": [";
+    for (size_t i = 0; i < uploadedFiles.size(); ++i)
+    {
+        if (i)
+            body << ", ";
+        body << "\"" << uploadedFiles[i] << "\"";
+    }
+    body << "],\n  \"fields\": {";
+    for (std::map<std::string, std::string>::const_iterator mit = formFields.begin(); mit != formFields.end();)
+    {
+        body << "\"" << mit->first << "\": \"" << mit->second << "\"";
+        if (++mit != formFields.end())
+            body << ", ";
+    }
+    body << "}\n}";
+    response.setBody(body.str());
     return response;
 }
 
@@ -445,100 +520,30 @@ std::string RequestHandler::saveBodyToFile(const std::string &body, const std::s
     return filename;
 }
 
-HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
-{
-    std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
-    if (it == request.getHeaders().end())
-        return _createErrorResponse(400, &server);
-
-    std::string ct = it->second;
-    std::string lower = toLowerStr(ct);
-    size_t bpos = lower.find("boundary=");
-    if (bpos == std::string::npos)
-        return _createErrorResponse(400, &server);
-    std::string boundary = ct.substr(bpos + 9);
-    boundary = trim(boundary);
-    if (!boundary.empty() && boundary[0] == '"')
-    {
-        boundary.erase(0, 1);
-        size_t q = boundary.find('"');
-        if (q != std::string::npos)
-            boundary = boundary.substr(0, q);
-    }
-    else
-    {
-        size_t sc = boundary.find(';');
-        if (sc != std::string::npos)
-            boundary = boundary.substr(0, sc);
-    }
-    if (boundary.empty())
-        return _createErrorResponse(400, &server);
-
-    std::vector<MultipartPart> parts;
-    try
-    {
-        parts = parseMultipart(request.getBody(), boundary);
-    }
-    catch (const std::exception &)
-    {
-        return _createErrorResponse(400, &server);
-    }
-
-    std::vector<std::string> uploadedFiles;
-    std::map<std::string, std::string> formFields;
-
-    for (size_t i = 0; i < parts.size(); ++i)
-    {
-        if (!parts[i].filename.empty())
-        {
-            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, location, server);
-            if (fname.empty())
-                return _createErrorResponse(500, &server);
-            std::string prefix = location.prefix;
-            if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
-                prefix.erase(prefix.size() - 1);
-            uploadedFiles.push_back(prefix + "/" + fname);
-        }
-        else
-        {
-            formFields[parts[i].name] = parts[i].body;
-        }
-    }
-
-    HttpResponse response;
-    if (uploadedFiles.size() == 1 && formFields.empty())
-    {
-        response.setStatusCode(201);
-        response.addHeader("Location", uploadedFiles[0]);
-        return response;
-    }
-
-    response.setStatusCode(200);
-    response.addHeader("Content-Type", "application/json; charset=utf-8");
-    std::stringstream body;
-    body << "{\n  \"files\": [";
-    for (size_t i = 0; i < uploadedFiles.size(); ++i)
-    {
-        if (i)
-            body << ", ";
-        body << "\"" << uploadedFiles[i] << "\"";
-    }
-    body << "],\n  \"fields\": {";
-    for (std::map<std::string, std::string>::const_iterator mit = formFields.begin(); mit != formFields.end(); )
-    {
-        body << "\"" << mit->first << "\": \"" << mit->second << "\"";
-        if (++mit != formFields.end())
-            body << ", ";
-    }
-    body << "}\n}";
-    response.setBody(body.str());
-    return response;
-}
-
 HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    std::string root = !location.root.empty() ? location.root : server.rootDef;
-    std::string path = root + request.getUri();
+    // 1) Выбираем, в какую папку удалять — upload_path → root → server.rootDef
+    std::string upload_dir = !location.upload_path.empty()
+                                 ? location.upload_path
+                                 : (!location.root.empty()
+                                        ? location.root
+                                        : server.rootDef);
+
+    // 2) Обрезаем префикс локации, чтобы не дублировать /uploads
+    std::string prefix = location.prefix;
+    if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
+        prefix.erase(prefix.size() - 1);
+    std::string rel = request.getUri();  // "/uploads/test.png"
+    if (rel.rfind(prefix, 0) == 0)       // если начинается с "/uploads"
+        rel = rel.substr(prefix.size()); // → "/test.png"
+    if (!rel.empty() && rel[0] == '/')
+        rel.erase(0, 1); // → "test.png"
+
+    // 3) Собираем настоящий полный путь
+    std::string path = upload_dir;
+    if (!path.empty() && path[path.size() - 1] != '/')
+        path += "/";
+    path += rel; // "/www/html/uploads/test.png"
 
     if (access(path.c_str(), F_OK) == -1)
     {
