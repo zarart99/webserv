@@ -2,6 +2,8 @@
 #include <sstream>
 #include <vector>
 #include <dirent.h>
+#include <algorithm>
+#include <cctype>
 
 static std::vector<std::string> split(const std::string &path, char delim)
 {
@@ -75,4 +77,20 @@ std::string generateAutoindex(const std::string &absPath, const std::string &uri
     closedir(dir);
     html += "</ul></body></html>";
     return html;
+}
+
+std::string trim(const std::string &s)
+{
+    const std::string WHITESPACE = " \t\r\n";
+    size_t first = s.find_first_not_of(WHITESPACE);
+    if (first == std::string::npos)
+        return "";
+    size_t last = s.find_last_not_of(WHITESPACE);
+    return s.substr(first, last - first + 1);
+}
+
+std::string toLower(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), static_cast<int (*)(int)>(std::tolower));
+    return s;
 }

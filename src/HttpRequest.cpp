@@ -2,29 +2,12 @@
 #include <cstdlib>
 #include <sstream>
 
-static std::string trim(const std::string &s)
-{
-    const std::string WHITESPACE = " \t\r\n";
-    size_t first = s.find_first_not_of(WHITESPACE);
-    if (std::string::npos == first)
-    {
-        return "";
-    }
-    size_t last = s.find_last_not_of(WHITESPACE);
-    return s.substr(first, (last - first + 1));
-}
 
 bool HttpRequest::isValid() const
 {
     return true;
 }
 
-// Приводит строку к нижнему регистру
-static std::string toLower(std::string s)
-{
-    std::transform(s.begin(), s.end(), s.begin(), static_cast<int (*)(int)>(std::tolower));
-    return s;
-}
 
 // разбираем чанки
 static std::string decodeChunked(const std::string &in)
