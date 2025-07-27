@@ -24,6 +24,7 @@ private:
     void removeClient(int client_fd);
     const ServerConfig* findMatchingConfig(const std::vector<ServerConfig>& configs, std::string host);
     void processRequest(int fd);
+    int getServerPort(int listen_fd);
 
     ConfigParser &cfg;                              
     const std::vector<ServerConfig> &server_configs;
