@@ -11,6 +11,7 @@
 #include <cctype>
 #include <map>
 #include <vector>
+#include <limits.h>
 
 std::vector<MultipartPart> parseMultipart(const std::string &rawBody, const std::string &boundary)
 {
@@ -205,13 +206,16 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
-    std::string root;
-    if (!location.upload_path.empty())
-        root = location.upload_path;
-    else if (!location.root.empty())
-        root = location.root;
-    else
-        root = server.rootDef;                            // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string root = !location.root.empty()
+                           ? location.root
+                           : server.rootDef;
+    // Если путь относительный – приводим к абсолютному через getcwd()
+    if (!root.empty())
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            root = std::string(cwd) + root;
+    }
     std::string normUri = normalizeUri(request.getUri()); // защита от "../"
     //  Отрезаем префикс локации (alias-логика)
     const std::string &prefix = location.prefix;
@@ -318,6 +322,12 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
         upload_dir = location.root;
     else
         upload_dir = server.rootDef;
+
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            upload_dir = std::string(cwd) + upload_dir;
+    }
 
     if (upload_dir.empty())
         return _createErrorResponse(500, &server);
@@ -444,6 +454,11 @@ std::string RequestHandler::saveBodyToFile(const std::string &body, const std::s
         dir = location.root;
     else
         dir = server.rootDef;
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            dir = std::string(cwd) + dir;
+    }
     if (dir.empty())
         return "";
 
@@ -529,6 +544,12 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
                                         ? location.root
                                         : server.rootDef);
 
+    // приводим к абсолютному, если путь относительный
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            upload_dir = std::string(cwd) + upload_dir;
+    }
     // 2) Обрезаем префикс локации, чтобы не дублировать /uploads
     std::string prefix = location.prefix;
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
