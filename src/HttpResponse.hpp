@@ -17,6 +17,8 @@ public:
     void setStatusMessage(const std::string &message);
     void addHeader(const std::string &key, const std::string &value);
     void setBody(const std::string &_body);
+    static const std::map<int,std::string>& getStatusMessages();
+
 
     std::string buildResponse() const;
 
@@ -26,6 +28,8 @@ private:
     static std::map<int, std::string> _statusMessages;
     std::map<std::string, std::string> _headers;
     std::string _body;
+    static std::map<int,std::string> initStatusMessages();
+
 };
 
 HttpResponse handleHttpRequest(const std::string& request);

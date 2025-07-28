@@ -21,11 +21,13 @@ HttpResponse &HttpResponse::operator=(const HttpResponse &src)
 }
 HttpResponse::~HttpResponse() {}
 
-void HttpResponse::setStatusMessage(const std::string& message) { _statusMessage = message; }
-void HttpResponse::addHeader(const std::string& key, const std::string& value) { _headers[key] = value; }
-void HttpResponse::setBody(const std::string& body) { _body = body; }
+void HttpResponse::setStatusMessage(const std::string &message) { _statusMessage = message; }
+void HttpResponse::addHeader(const std::string &key, const std::string &value) { _headers[key] = value; }
+void HttpResponse::setBody(const std::string &body) { _body = body; }
 
-static std::map<int, std::string> initStatusMessages() {
+// определение статической функции класса
+std::map<int, std::string> HttpResponse::initStatusMessages()
+{
     std::map<int, std::string> m;
     m[200] = "OK";
     m[201] = "Created";
@@ -40,29 +42,38 @@ static std::map<int, std::string> initStatusMessages() {
     return m;
 }
 
-std::map<int, std::string> HttpResponse::_statusMessages = initStatusMessages();
+// инициализатор статического поля через метод класса
+std::map<int, std::string> HttpResponse::_statusMessages = HttpResponse::initStatusMessages();
 
-void HttpResponse::setStatusCode(int code) {
+const std::map<int, std::string> &HttpResponse::getStatusMessages()
+{
+    return _statusMessages;
+}
+
+void HttpResponse::setStatusCode(int code)
+{
     _statusCode = code;
     // автоматически подставляем текст
-    std::map<int,std::string>::iterator it = _statusMessages.find(code);
+    std::map<int, std::string>::iterator it = _statusMessages.find(code);
     _statusMessage = (it != _statusMessages.end()) ? it->second : "Unknown";
 }
 
-
-std::string HttpResponse::buildResponse() const {
+std::string HttpResponse::buildResponse() const
+{
     std::stringstream response_ss;
 
     response_ss << "HTTP/1.1 " << _statusCode << " " << _statusMessage << "\r\n";
 
     std::map<std::string, std::string> headers_copy = _headers;
-    if (!_body.empty() && headers_copy.find("Content-Length") == headers_copy.end()) {
+    if (!_body.empty() && headers_copy.find("Content-Length") == headers_copy.end())
+    {
         std::stringstream body_size_ss;
         body_size_ss << _body.length();
         headers_copy["Content-Length"] = body_size_ss.str();
     }
 
-    for (std::map<std::string, std::string>::const_iterator it = headers_copy.begin(); it != headers_copy.end(); ++it) {
+    for (std::map<std::string, std::string>::const_iterator it = headers_copy.begin(); it != headers_copy.end(); ++it)
+    {
         response_ss << it->first << ": " << it->second << "\r\n";
     }
 
@@ -72,9 +83,9 @@ std::string HttpResponse::buildResponse() const {
     return response_ss.str();
 }
 
-//HttpResponse handleHttpRequest(const std::string& raw_request) {
-//    HttpRequest req(raw_request);
-//    HttpResponse res;
+// HttpResponse handleHttpRequest(const std::string& raw_request) {
+//     HttpRequest req(raw_request);
+//     HttpResponse res;
 
 //    if (!req.isValid()) {
 //        res.setStatusCode(400);
@@ -109,5 +120,3 @@ std::string HttpResponse::buildResponse() const {
 
 //    return res;
 //}
-
-

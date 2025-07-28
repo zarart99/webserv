@@ -1,4 +1,5 @@
 #include "RequestHandler.hpp"
+#include "HttpResponse.hpp"
 #include "ConfigParser.hpp"
 #include "utils.hpp"
 #include "MimeTypes.hpp"
@@ -133,7 +134,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
         // Проверяем, 400
         if (!server_config)
         {
-            return _createErrorResponse(400, NULL);
+            return _createErrorResponse(400, NULL, NULL, NULL);
         }
 
         location_config = _findLocationFor(*server_config, request.getUri());
@@ -142,7 +143,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 
         if (!location_config)
         {
-            return _createErrorResponse(404, server_config);
+            return _createErrorResponse(404, server_config, NULL);
         }
 
         // Проверяем, 413
@@ -151,7 +152,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
         size_t content_length = request.getContentLength();
         if (limit_in_bytes > 0 && content_length > limit_in_bytes)
         {
-            return _createErrorResponse(413, server_config);
+            return _createErrorResponse(413, server_config, NULL, location_config);
         }
 
         const std::vector<std::string> &allowed_methods = location_config->allow_methods;
@@ -169,7 +170,7 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
             // Если метод не разрешен, возвращаем 405
             if (!method_is_allowed)
             {
-                return _createErrorResponse(405, server_config, &allowed_methods);
+                return _createErrorResponse(405, server_config, &allowed_methods, location_config);
             }
         }
 
@@ -197,10 +198,10 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 
         ss >> statusCode; // Если в начале строки не число, statusCode останется 500
 
-        return _createErrorResponse(statusCode, server_config);
+        return _createErrorResponse(statusCode, server_config, NULL, location_config);
     }
 
-    return _createErrorResponse(501, server_config); // Если метод не реализован, возвращаем 501 Not Implemented
+    return _createErrorResponse(501, server_config, NULL, location_config); // Если метод не реализован, возвращаем 501 Not Implemented
 }
 
 HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
@@ -233,12 +234,12 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 
     // проверяем, что мы не выходим за пределы root
     if (absPath.rfind(root + "/", 0) != 0)
-        return _createErrorResponse(403, &server); // на самом деле сюда не попадем, т.к. normalizeUri защищает от "../", но на всякий случай
+        return _createErrorResponse(403, &server, NULL, &location); // на самом деле сюда не попадем, т.к. normalizeUri защищает от "../", но на всякий случай
 
     struct stat path_stat;
     if (stat(absPath.c_str(), &path_stat) != 0)
     {
-        return _createErrorResponse(404, &server); // Путь не существует
+        return _createErrorResponse(404, &server, NULL, &location); // Путь не существует
     }
 
     // Если URI указывает на директорию
@@ -271,19 +272,19 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
         }
         else
         {
-            return _createErrorResponse(403, &server); // index нет и autoindex off — 403
+            return _createErrorResponse(403, &server, NULL, &location); // index нет и autoindex off — 403
         }
     }
 
     if (access(absPath.c_str(), R_OK) != 0)
     {
-        return _createErrorResponse(403, &server);
+        return _createErrorResponse(403, &server, NULL, &location);
     }
 
     std::ifstream file(absPath.c_str(), std::ios::binary);
     if (!file.is_open())
     {
-        return _createErrorResponse(500, &server);
+        return _createErrorResponse(500, &server, NULL, &location); // Ошибка открытия файла
     }
     std::string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
@@ -330,7 +331,7 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
     }
 
     if (upload_dir.empty())
-        return _createErrorResponse(500, &server);
+        return _createErrorResponse(500, &server, NULL, &location);
 
     std::string prefix = location.prefix;
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
@@ -344,7 +345,7 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
 
     std::string filename = saveBodyToFile(request.getBody(), rel, location, server);
     if (filename.empty())
-        return _createErrorResponse(500, &server);
+        return _createErrorResponse(500, &server, NULL, &location);
 
     HttpResponse response;
     response.setStatusCode(201);
@@ -356,13 +357,13 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
 {
     std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
     if (it == request.getHeaders().end())
-        return _createErrorResponse(400, &server);
+        return _createErrorResponse(400, &server, NULL, &location); // Если нет content-type, возвращаем 400 Bad Request
 
     std::string ct = it->second;
     std::string lower = toLower(ct);
     size_t bpos = lower.find("boundary="); // Извлекаем параметр boundary из заголовка
     if (bpos == std::string::npos)
-        return _createErrorResponse(400, &server);
+        return _createErrorResponse(400, &server, NULL, &location); // Если нет boundary, возвращаем 400 Bad Request
     std::string boundary = ct.substr(bpos + 9);
     boundary = trim(boundary);
     if (!boundary.empty() && boundary[0] == '"') // — если boundary в кавычках, убираем их
@@ -379,7 +380,7 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
             boundary = boundary.substr(0, sc);
     }
     if (boundary.empty())
-        return _createErrorResponse(400, &server);
+        return _createErrorResponse(400, &server, NULL, &location); // Если boundary пустое, возвращаем 400 Bad Request
 
     std::vector<MultipartPart> parts; // Разбираем всё тело на отдельные части по найденному boundary
     try
@@ -388,7 +389,7 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
     }
     catch (const std::exception &)
     {
-        return _createErrorResponse(400, &server);
+        return _createErrorResponse(400, &server, NULL, &location); // Если ошибка при разборе multipart, возвращаем 400 Bad Request
     }
 
     std::vector<std::string> uploadedFiles; // Контейнеры: для сохранённых файлов и для полей формы
@@ -401,8 +402,8 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
         {
             std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, location, server);
             if (fname.empty())
-                return _createErrorResponse(500, &server);
-            std::string prefix = location.prefix; // Формируем URL доступа (удаляем хвостовой '/')
+                return _createErrorResponse(500, &server, NULL, &location); // Ошибка сохранения файла
+            std::string prefix = location.prefix;                           // Формируем URL доступа (удаляем хвостовой '/')
 
             if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
                 prefix.erase(prefix.size() - 1);
@@ -568,16 +569,16 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
 
     if (access(path.c_str(), F_OK) == -1)
     {
-        return _createErrorResponse(404, &server);
+        return _createErrorResponse(404, &server, NULL, &location); // Путь не существует
     }
     if (access(path.c_str(), W_OK) == -1)
     {
-        return _createErrorResponse(403, &server); // Нет прав на запись/удаление
+        return _createErrorResponse(403, &server, NULL, &location); // Нет прав на запись/удаление
     }
 
     if (std::remove(path.c_str()) != 0)
     {
-        return _createErrorResponse(500, &server); // Системная ошибка при удалении
+        return _createErrorResponse(500, &server, NULL, &location); // Системная ошибка при удалении
     }
 
     HttpResponse response;
@@ -585,11 +586,16 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
     return response;
 }
 
-HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods)
+HttpResponse RequestHandler::_createErrorResponse(int statusCode,
+                                                  const ServerConfig *server,
+                                                  const std::vector<std::string> *allowed_methods,
+                                                  const LocationStruct *location)
 {
     HttpResponse response;
     response.setStatusCode(statusCode);
-    response.addHeader("Content-Type", "text/html; charset=utf-8"); // тут нужно уточнить, какой тип контента возвращаем
+    response.addHeader("Content-Type", "text/html; charset=utf-8");
+
+    // Для 405 – заголовок Allow
     if (statusCode == 405 && allowed_methods && !allowed_methods->empty())
     {
         std::string allow_header;
@@ -602,22 +608,69 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode, const ServerCo
         response.addHeader("Allow", allow_header);
     }
 
-    std::string body;
-    // Пытаемся найти кастомную страницу ошибки, если конфиг сервера доступен
-    if (server)
+    // 1) Пытаемся найти кастомную страницу в location.error_page
+    std::string pagePath;
+    if (location)
     {
-        std::map<int, std::string>::const_iterator it = server->error_pageDef.find(statusCode);
-        if (it != server->error_pageDef.end())
+        std::map<int, std::string>::const_iterator itLoc =
+            location->error_page.find(statusCode);
+        if (itLoc != location->error_page.end())
         {
-            std::ifstream file(it->second.c_str());
-            if (file.is_open())
-            {
-                body.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                response.setBody(body);
-                return response;
-            }
+            pagePath = itLoc->second;
         }
     }
+
+    // 2) Если не нашли в локации — смотрим server->error_pageDef
+    if (pagePath.empty() && server)
+    {
+        std::map<int, std::string>::const_iterator itSrv =
+            server->error_pageDef.find(statusCode);
+        if (itSrv != server->error_pageDef.end())
+        {
+            pagePath = itSrv->second;
+        }
+    }
+
+    // 3) Если есть путь к HTML — пробуем его отдать
+    if (!pagePath.empty()) {
+        // собираем тот же root, что и в GET
+        std::string root = (location && !location->root.empty())
+                               ? location->root
+                               : server->rootDef;
+        if (!root.empty()) {
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)))
+                root = std::string(cwd) + root;
+        }
+        std::string fullPath = root + pagePath;  // <-- теперь это "<cwd>/www/html/error/404.html"
+    
+        std::ifstream file(fullPath.c_str());
+        if (file.is_open()) {
+            std::string body((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+            response.setBody(body);
+            return response;
+        }
+    }
+
+    // 4) Генерим простую HTML-страницу, беря текст из HttpResponse::getStatusMessages()
+    const std::map<int, std::string> &statusMsgs = HttpResponse::getStatusMessages();
+    std::map<int, std::string>::const_iterator itStatus =
+        statusMsgs.find(statusCode);
+    std::string reason;
+    if (itStatus != statusMsgs.end())
+        reason = itStatus->second;
+    else
+        reason = "";
+
+    std::ostringstream oss;
+    oss << "<html><head><title>"
+        << statusCode << " " << reason
+        << "</title></head><body><h1>"
+        << statusCode << " " << reason
+        << "</h1><hr><em>webserv - Karandashi </em></body></html>";
+
+    response.setBody(oss.str());
     return response;
 }
 
