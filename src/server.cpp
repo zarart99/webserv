@@ -266,7 +266,7 @@ void Server::processRequest(int fd)
     Cgi script(cfg, req, clients[fd]->getClientPort(), clients[fd]->getClientIP(), host);
     HttpResponse resp;
     std::cout << "isCgi //" << "port " << clients[fd]->getClientPort() << "ip " << clients[fd]->getClientIP() << "listen_fd" << listen_fd << std::endl;
-    if (script.isCgi(req.getUri()))
+    if (script.isCgi())
     {
         // Обрабатываем cgi запрос 
         std::string response = script.cgiHandler();

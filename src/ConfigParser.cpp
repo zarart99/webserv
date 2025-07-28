@@ -417,12 +417,12 @@ LocationStruct ConfigParser::parseLocation(std::vector<std::string>& strs)
 			location.index = findIndex(line);
 		else if (line.find("autoindex") == 0)
 			location.autoindex = findAutoindex(line);
-                else if (line.find("allow_methods") == 0)
-                        location.allow_methods = findMethods(line);
-                else if (line.find("upload_path") == 0)
-                        location.upload_path = findUploadPath(line);
-                else if (line.find("client_max_body_size") == 0)
-                        location.client_max_body_size = findMaxBody(line);
+        else if (line.find("allow_methods") == 0)
+            location.allow_methods = findMethods(line);
+        else if (line.find("upload_path") == 0)
+            location.upload_path = findUploadPath(line);
+        else if (line.find("client_max_body_size") == 0)
+            location.client_max_body_size = findMaxBody(line);
 		else if (line.find("error_page") == 0)
 			appendErrorPage(line, location.error_page);
 		else if (line.find("cgi") == 0)

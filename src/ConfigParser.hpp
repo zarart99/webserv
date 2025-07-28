@@ -26,12 +26,12 @@ struct CgiStruct
 
 struct LocationStruct
 {
-        std::string prefix;
-        std::string root;
-        std::string upload_path;
-        std::vector<std::string> index;
-        bool autoindex;
-        size_t client_max_body_size;
+    std::string prefix;
+    std::string root;
+    std::string upload_path;
+    std::vector<std::string> index;
+    bool autoindex;
+    size_t client_max_body_size;
 	std::map<int, std::string> error_page;
 	std::vector<std::string> allow_methods;
 	std::map<int, std::string> redir;
@@ -75,9 +75,9 @@ class ConfigParser
 		int findPort(std::string& str);
 		bool checkValideIP(std::string& str);
 		std::vector<std::string> findServerName(std::string& str);
-                std::string findRoot(std::string& str);
-                std::string findUploadPath(std::string& str);
-                std::vector<std::string> findIndex(std::string& str);
+        std::string findRoot(std::string& str);
+        std::string findUploadPath(std::string& str);
+        std::vector<std::string> findIndex(std::string& str);
 		bool findAutoindex(std::string& str);
 		size_t findMaxBody(std::string &str);
 		void appendErrorPage(std::string& str, std::map<int, std::string> &errors);

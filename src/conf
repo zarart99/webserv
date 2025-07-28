@@ -14,19 +14,22 @@ server {
     	root /www/html/api;
 		allow_methods GET POST;
 		client_max_body_size 10M;
-		cgi .php /usr/bin/php-cgi;
+		cgi .php /usr/bin/php-cgi 40;
     }
 
 	location /uploads {
 		root /www/html/uploads;
-		allow_methods GET POST DELETE;
+		allow_methods GET POST;
 		autoindex on;
+		upload_path yyy;
 		error_page 404 /errors/404.html;
+		cgi .php /usr/bin/php-cgi 40;
+		cgi .py /usr/bin/python3;
     }
 }
 
 server {
-	listen 196.0.0.1:8006;
+	listen 0.0.0.0:8006;
 	server_name mysite;
 	error_page 404 /errors/404.html;
 	

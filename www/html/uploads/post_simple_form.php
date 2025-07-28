@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
-<head><title>Formulaire POST</title></head>
+<head><title>Formulaire POST simple</title></head>
 <body>
-  <form action="http://localhost:8001/uploads/post_test.php" method="POST">
-	<label for="message">Message :</label>
-	<input type="text" name="message" id="message" />
+  <h2>Send your message</h2>
+  <form action="http://localhost:8001/uploads/post_simple.php" method="POST">
+	<textarea name="message" rows="5" cols="40" placeholder="Type your message here"></textarea><br><br>
 	<button type="submit">Envoyer</button>
   </form>
 </body>

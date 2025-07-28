@@ -9,26 +9,39 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <poll.h>
+#include <signal.h>
+#include <cstdio>
 #include "ConfigParser.hpp"
 #include "RequestHandler.hpp"
 #include "HttpRequest.hpp"
 
+struct ExecveEnvp
+{
+	std::string query;
+	std::string path_info;
+
+};
+
 struct ExecveArgs
 {
-	std::string cgi_ext;
-	std::string path_script;
-	std::vector<std::string> envs_strings;
-	std::vector<std::string> argv_strings;
 
+	std::string path_relative;
+	std::string path_absolut;
+	CgiStruct data_cgi;
+	ExecveEnvp data_envp;
+	std::vector<std::string> envs_strings;
 	std::vector<char*> envs_ptrs;
+	std::vector<std::string> argv_strings;
 	std::vector<char*> argv_ptrs;
-	std::string interpreter;
+	
 };
 
 struct RequestServer
 {
 	std::string ip;
 	std::string url;
+	std::string ext;//Расширение скрипта если он есть 
 	int port;
 	std::string host;
 	HttpRequest req;
@@ -45,22 +58,21 @@ class Cgi : public RequestHandler
 	~Cgi(void);
 
 	
-	bool isCgi(std::string url);
+	bool isCgi(void);
 
 	//Создаем переменные окружения CGI
 	void createCgiEnvp(void);
 	std::string findScriptFilename(void);
-	std::string findQuery(void);
-	std::string findPathInfo(void);
-
+	void findQuery(void);
+	void findPathInfo(void);
+	bool checkMethod(void);
+	std::string checkPath(std::string& path);
 
 	std::string cgiHandler(void);
 	std::string composeErrorResponse(const std::string& error);
 	std::string executeScript(void);
-	const ServerConfig* getServer() const;
 	void findArgsExecve(void);
 	void printEnvpCgi(void);
-	char** getEnvp(void);
 
 	private:
 	ConfigParser _config;

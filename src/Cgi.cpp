@@ -10,7 +10,6 @@ Cgi::Cgi(ConfigParser& config, HttpRequest request, int port, std::string ip, co
     this->_data_rec.host = host;
     this->_data_rec.ip = ip;
     this->_data_rec.port = port;
-
 }
 
 Cgi::Cgi(const Cgi& src): RequestHandler(src._config)
@@ -21,16 +20,11 @@ Cgi& Cgi::operator=(const Cgi& src)
 {
     if (this != &src)
     {
+        this->_config = src._config;
         this->_data_rec = src._data_rec;
         this->_server = src._server;
 	    this->_location = src._location;
-        this->_config = src._config;
-        this->_exec_args.cgi_ext = src._exec_args.cgi_ext;
-        this->_exec_args.path_script = src._exec_args.path_script;
-        this->_exec_args.envs_ptrs = src._exec_args.envs_ptrs;
-        this->_exec_args.envs_strings = src._exec_args.envs_strings;
-        this->_exec_args.interpreter = src._exec_args.interpreter;
-        this->_exec_args.argv_ptrs = src._exec_args.argv_ptrs;
+        this->_exec_args = src._exec_args;
     }
     return *this;
 }
@@ -44,80 +38,7 @@ std::string to_string_98(int val)
     return str.str();
 }
 
-bool Cgi::isCgi(std::string url)
-{
-    size_t pos = url.find_last_of('?');//Проверяем на наличие query string
-    if (pos != std::string::npos)
-        url = url.substr(0, pos);//Если нашли то обрезаем
-
-    pos = url.find_last_of('.');
-    size_t pos_2 = url.find_last_of('/');//Проверяем на наличие path_info
-    if (pos < pos_2)
-        url = url.substr(0, pos_2);//Если нашли то обрезаем
-    if (pos != std::string::npos)
-    {
-        std::string ext = url.substr(pos);
-        if (ext == ".php" || ext == ".py" || ext == ".cgi")
-        {
-            _exec_args.cgi_ext = ext;
-            return true;
-        }
-    }
-    return false;
-}
-
-std::string Cgi::findScriptFilename(void)//Функция находит абсолютный путь к файлу
-{
-    const LocationStruct *curLocation = _findLocationFor(*_server, _data_rec.url);//Ищем location запроса
-    if (curLocation == NULL)
-        throw std::runtime_error("404 Not Found//location");//как здесь выйти , найти файл ошибки или сгенерить свою
-    _location = curLocation;
-
-    /*Обрезаем лишние от абсолютного пути*/
-    
-    std::string path = _data_rec.url.substr(curLocation->prefix.length());//Удаляем префикс
-
-    size_t pos = path.find_first_of('.');
-    if (pos != std::string::npos)
-    {
-        size_t query = path.find_first_of('?');//Удаляем query если есть
-        if (query != std::string::npos)
-        {
-            path = path.substr(0, query);
-        }
-        size_t ext_end = path.find('/', pos);//Удаляем path_info
-        if (ext_end != std::string::npos)
-        {
-            path = path.substr(0, ext_end);
-        }
-
-    }
-
-//    std::string srcipt_filename = curLocation->root.substr(1) + path;//отночительный путь к файлу
-    char cwd[500];
-    if (!getcwd(cwd, sizeof(cwd)))
-        throw std::runtime_error("500 Internal Server Error");
-    std::string absolut_root = curLocation->root;
-    if (absolut_root[0] != '/')
-        absolut_root =  "/" + absolut_root;
-
-    std::string srcipt_filename = std::string(cwd) + absolut_root + path; //Создаем абсолютный путь к файлу
-
-    /* Блок проверок файла */
-    if (access(srcipt_filename.c_str(), F_OK) != 0)//Проверка существует ли файл
-		throw std::runtime_error("404 Not Found /access F_OK");//Не выходить полностью а возвращать страницу с 404
-
-    struct stat st;
-    if (stat(srcipt_filename.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
-        throw std::runtime_error("404 Not Found!");//Проверка файл это или каталог
-
-    if (access(srcipt_filename.c_str(),  R_OK) != 0)//Проверка можно ли его читать
-		throw std::runtime_error("403 Forbidden");
-    _exec_args.path_script = srcipt_filename;
-    return srcipt_filename;
-}
-
-std::string Cgi::findQuery(void)//Функия для поиска переменной окружения QUERY_STRING и корректирования URL
+void Cgi::findQuery(void)//Функия для поиска переменной окружения QUERY_STRING и корректирования URL
 {
     size_t pos = _data_rec.req.getUri().find('?');
     std::string query;
@@ -133,64 +54,209 @@ std::string Cgi::findQuery(void)//Функия для поиска переме�
         _data_rec.url = _data_rec.req.getUri();
     }
 
-    return query;
+    _exec_args.data_envp.query = query;
 }
 
-std::string  Cgi::findPathInfo(void)
+void  Cgi::findPathInfo(void)
 {
     std::string path_info = "";
-    size_t pos = _data_rec.url.find_last_of('.');
+    size_t pos = _data_rec.url.find_last_of('.');//Находим индекс начала расширения.
+    if (pos == std::string::npos)
+        return;
     size_t pos_2 = _data_rec.url.find('/', pos);//Проверяем на наличие path_info
     if (pos_2 != std::string::npos)
     {
         path_info = _data_rec.url.substr(pos_2);//Если нашли то отрезаем нужную часть
         _data_rec.url = _data_rec.url.substr(0, pos_2);
     }
-    return path_info;
+    _data_rec.ext = _data_rec.url.substr(pos);
+    _exec_args.data_envp.path_info = path_info;
+}
+
+bool Cgi::isCgi(void)
+{
+    _server = _findServerConfig(_data_rec.port, _data_rec.ip, _data_rec.host);//Ищем наш сервер
+    if (_server == NULL)
+    {
+        std::cerr << "Error: dont find server for cgi" << std::endl;
+        return false;
+    }
+
+    findQuery();//Отделяем query от url и сохраняем 
+    findPathInfo();//Отделяем path_info от url и сохраняем .Сохраняем расширение.
+
+    if (_data_rec.ext.empty())//Если расширения нет то значит это не запрос для cgi
+        return false;
+
+    _location = _findLocationFor(*_server, _data_rec.url);//Ищем location запроса
+    if (_location == NULL)//Если у запроса нет location 
+        return false;
+
+    for (size_t i = 0; i < _location->cgi.size(); i++)//Проходим по всем директивам cgi в location
+    {
+        if (_location->cgi[i].extension == _data_rec.ext)//Если расширение директивы cgi совпадает с расширением url то все ок запускаем cgi
+        {
+            _exec_args.data_cgi.extension = _data_rec.ext;//Расширение
+            _exec_args.data_cgi.pathInterpreter = _location->cgi[i].pathInterpreter;//Путь к интерпретатору
+            _exec_args.data_cgi.timeout = _location->cgi[i].timeout;//timeout
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Cgi::checkMethod(void)
+{
+    std::string rec_method = _data_rec.req.getMethod();
+
+    if (rec_method != "POST" && rec_method != "GET")
+        return false;
+
+    for (size_t i = 0; i < _location->allow_methods.size(); i++)
+    {
+        if (_location->allow_methods[i] == rec_method)
+        return true;    
+    } 
+
+    return false;
+}
+
+std::string Cgi::checkPath(std::string& path)
+{
+    std::vector<std::string> parts_path;
+    std::stringstream ss(path);
+    std::string item;
+    std::string result = "/";
+
+    while (std::getline(ss, item, '/'))
+    {
+        if (item.empty() || item == ".")
+            continue;
+        if (item == "..")
+        {
+            if (!parts_path.empty())
+                parts_path.pop_back();
+        }
+        else
+            parts_path.push_back(item);
+    }
+
+
+    for(size_t i = 0; i < parts_path.size(); i++)
+    {
+        result += parts_path[i];
+        if (i != parts_path.size() - 1)
+            result += "/";
+    }
+
+    return result;
+}
+
+std::string Cgi::findScriptFilename(void)//Функция находит абсолютный путь к файлу
+{
+    /*Обрезаем лишние от абсолютного пути*/
+    std::string path = _data_rec.url.substr(_location->prefix.length());//Удаляем префикс
+
+    char cwd[1000];
+    if (!getcwd(cwd, sizeof(cwd)))//находим абсолютный путь до корневого каталога
+        throw std::runtime_error("500 Internal Server Error");
+
+    std::string absolut_root = _location->root;
+    if (absolut_root[0] != '/')
+        absolut_root =  "/" + absolut_root;
+
+    std::string script_filename = std::string(cwd) + absolut_root + path; //Создаем абсолютный путь к файлу
+    
+    script_filename = checkPath(script_filename);//Чистим путь от лишних / или .
+    if (script_filename.find(std::string(cwd)) != 0)//Проверяем не вышли ли за корневой каталог
+        throw std::runtime_error("403 Forbidden");
+    
+    /* Блок проверок файла */
+    if (access(script_filename.c_str(), F_OK) != 0)//Проверка существует ли файл
+		throw std::runtime_error("404 Not Found");//Не выходить полностью а возвращать страницу с 404
+
+    if (access(script_filename.c_str(),  R_OK) != 0)//Проверка можно ли его читать
+		throw std::runtime_error("403 Forbidden");
+
+    if (_data_rec.ext == ".cgi" && access(script_filename.c_str(), X_OK) != 0)
+        throw std::runtime_error("403 Forbidden");
+
+    struct stat st;
+    if (stat(script_filename.c_str(), &st) != 0)
+        throw std::runtime_error("404 Not Found!");//Проверка файл это или каталог
+
+    if (!S_ISREG(st.st_mode))
+        throw std::runtime_error("403 Forbidden!");//Проверка существует файл или нет 
+
+    _exec_args.path_relative = script_filename.substr(script_filename.find_last_of('/') + 1);//Отделяем имя скрипта для передачи в execve , относительный путь;
+    _exec_args.path_absolut = script_filename;//Сохраняем абсолютный путь
+
+    return script_filename;
 }
 
 void Cgi::createCgiEnvp(void)
 {
-    _server = _findServerConfig(_data_rec.port, _data_rec.ip, _data_rec.host);
-    if (_server == NULL)
-        throw std::runtime_error("500 Internal Server Error");
-
-    std::string query = findQuery();
-
-    /*Блок поиска заголовков content-type и content_type*/
-    std::string content_length = "0";
-    std::string content_type = "application/x-www-form-urlencoded";
-    std::map<std::string , std::string>::const_iterator it = _data_rec.req.getHeaders().find("content-length");//Ставим итератор на позицию ключа в контейнере
-    if (it != _data_rec.req.getHeaders().end())//Если ключ найдет , передаем значение.Если нет передаем дефолтное значение 0
-        content_length = it->second;
-    it = _data_rec.req.getHeaders().find("content-type"); //Тоже самое только с другим ключем. Если нет то опять дефолтное значение запроса html
-    if (it != _data_rec.req.getHeaders().end())
-        content_type = it->second;
-
-    /*Блок в котором собираем окружение CGI для execve*/
+    /*Блок в котором собираем переменные окружения CGI для execve*/
     _exec_args.envs_strings.clear();
-    if (_data_rec.req.getMethod() == "GET" || _data_rec.req.getMethod() == "POST")
+    
+    if (checkMethod())
     {
-        _exec_args.envs_strings.push_back("REQUEST_METHOD=" + _data_rec.req.getMethod());
-        _exec_args.envs_strings.push_back("REQUEST_URI=" + _data_rec.req.getUri());
-        _exec_args.envs_strings.push_back(query);
-        _exec_args.envs_strings.push_back("PATH_INFO=" + findPathInfo());
-        _exec_args.envs_strings.push_back("SCRIPT_NAME=" + _data_rec.url);
-        _exec_args.envs_strings.push_back("SCRIPT_FILENAME=" + findScriptFilename());
+        _exec_args.envs_strings.push_back("REQUEST_METHOD=" + _data_rec.req.getMethod());//Метод запроса
+        _exec_args.envs_strings.push_back("REQUEST_URI=" + _data_rec.req.getUri());//Url запроса начиная от prefixa заканчивая query если есть  ///uploads/index.php/rrr?name=tt
+        _exec_args.envs_strings.push_back(_exec_args.data_envp.query);// Все что после вопроса //name=tt
+        _exec_args.envs_strings.push_back("PATH_INFO=" + _exec_args.data_envp.path_info);//Путь после имени файла до query //rrr
+        _exec_args.envs_strings.push_back("SCRIPT_NAME=" + _data_rec.url);//prefix + имя скрипта //uploads/index.php
+        _exec_args.envs_strings.push_back("SCRIPT_FILENAME=" + findScriptFilename());//Абсолютный путь до скрипта 
         _exec_args.envs_strings.push_back("REDIRECT_STATUS=200");
         _exec_args.envs_strings.push_back("SERVER_PROTOCOL=" + _data_rec.req.getHttpVersion());
         _exec_args.envs_strings.push_back("SERVER_NAME=" + _data_rec.host);
         _exec_args.envs_strings.push_back("SERVER_PORT=" + to_string_98(_data_rec.port));
         _exec_args.envs_strings.push_back("REMOTE_ADDR=" + _data_rec.ip);
         _exec_args.envs_strings.push_back("GATEWAY_INTERFACE=CGI/1.1");
+
+        const std::map<std::string, std::string>& headers = _data_rec.req.getHeaders();
+        std::map<std::string, std::string>::const_iterator it;
+
+        it = headers.find("user-agent");
+        if (it!= headers.end())
+            _exec_args.envs_strings.push_back("HTTP_USER_AGENT=" + it->second);
+        
+        it = headers.find("accept");
+        if (it!= headers.end())
+            _exec_args.envs_strings.push_back("HTTP_ACCEPT=" + it->second);
+
+        /*Блок поиска заголовков content-type и content_type*/
         if (_data_rec.req.getMethod() == "POST")
         {
+            std::string content_length = "0";
+            std::string content_type = "application/x-www-form-urlencoded";
+            it = headers.find("content-length");//Ставим итератор на позицию ключа в контейнере
+            if (it!= headers.end())//Если ключ найдет , передаем значение.Если нет передаем дефолтное значение 0
+                content_length = it->second;
+            it = headers.find("content-type"); //Тоже самое только с другим ключем. Если нет то опять дефолтное значение запроса html
+            if (it != headers.end())
+                content_type = it->second;
             _exec_args.envs_strings.push_back("CONTENT_LENGTH=" + content_length);
             _exec_args.envs_strings.push_back("CONTENT_TYPE=" + content_type);
+        }
+
+        if (!_location->upload_path.empty() && _location->upload_path != _location->root)
+        {
+            std::string path;
+            if (_location->upload_path[0] == '/')
+                path = _location->upload_path; //У нас изначально абсолютный путь
+            else
+            {
+                std::string dir = _exec_args.path_absolut.substr(0, _exec_args.path_absolut.find_last_of('/'));//Если относительный пусть , то берем путь до текущего каталога
+                path = dir + "/" + _location->upload_path;//Совмещаем с относительным
+            }
+            path = checkPath(path);
+            _exec_args.envs_strings.push_back("UPLOAD_PATH=" + path);
         }
     }
     else
         throw std::runtime_error("Error: 405 Method Not Allowed");
+        
     _exec_args.envs_ptrs.clear();
     for (size_t i = 0; i < _exec_args.envs_strings.size(); i++)
     {
@@ -209,41 +275,25 @@ void Cgi::printEnvpCgi(void)
     std::cout << "---------------\n";
 }
 
-char** Cgi::getEnvp(void)
-{
-    return &_exec_args.envs_ptrs[0];
-}
-
-const ServerConfig* Cgi::getServer() const
-{
-    return _server;
-}
-
 void Cgi::findArgsExecve(void)//В этой функции готовим аргументы для execve
 {
     _exec_args.argv_strings.clear();
     _exec_args.argv_ptrs.clear();
+    
+    if (access(_exec_args.data_cgi.pathInterpreter.c_str(), X_OK) != 0)
+        throw std::runtime_error("500 Internal Server Error: Intepretor not exec");
 
-
-    if (_exec_args.cgi_ext == ".php") //Выбераем нужное нам расширение
+    if (_exec_args.data_cgi.extension == ".cgi")
     {
-        _exec_args.interpreter = "/usr/bin/php-cgi";//Находим path интерпретатора
-        _exec_args.argv_strings.push_back("php-cgi");//Одельно имя программы
-        _exec_args.argv_strings.push_back(_exec_args.path_script);//Адрес файла который нужно запустить
+        _exec_args.argv_strings.push_back(_exec_args.path_relative);
+        _exec_args.data_cgi.pathInterpreter = _exec_args.path_absolut;
     }
-    else if (_exec_args.cgi_ext  == ".py")
+    else 
     {
-        _exec_args.interpreter = "/usr/bin/python3";
-        _exec_args.argv_strings.push_back("python3");
-        _exec_args.argv_strings.push_back(_exec_args.path_script);
+        std::string prog_name = _exec_args.data_cgi.pathInterpreter.substr(_exec_args.data_cgi.pathInterpreter.find_last_of('/') + 1);
+        _exec_args.argv_strings.push_back(prog_name);//Одельно имя программы
+        _exec_args.argv_strings.push_back(_exec_args.path_relative);//Адрес файла который нужно запустить
     }
-    else if (_exec_args.cgi_ext  == ".cgi")
-    {
-        _exec_args.interpreter = _exec_args.path_script;
-        _exec_args.argv_strings.push_back(_exec_args.path_script);
-    }
-    else
-        throw std::runtime_error("500 Internal Server Error");
 
     for (size_t i = 0; i < _exec_args.argv_strings.size(); i++)
     {
@@ -272,8 +322,16 @@ std::string Cgi::executeScript(void)
 
     int pipe_in[2];//Через этот пайп передаем данные из родительского процесса в дочерний 
     int pipe_out[2];//Через этот выводим данные из дочернего в родительский 
-    if (pipe(pipe_in) == -1 || pipe(pipe_out) == -1)
+    if (pipe(pipe_in) == -1)
         throw std::runtime_error("500 Internal Server Error");
+        
+    if (pipe(pipe_out) == -1)
+    {
+        close(pipe_in[0]);
+        close(pipe_in[1]);
+        throw std::runtime_error("500 Internal Server Error");
+    }
+
     pid_t pid = fork();
     if (pid == -1)
     {
@@ -293,14 +351,22 @@ std::string Cgi::executeScript(void)
         {   
             close(pipe_in[0]);
             close(pipe_out[1]);
+            perror("dup2");
             exit(1);
         }
 
-
         close(pipe_in[0]);//Закрываем уже не нужные пайпы
         close(pipe_out[1]);
-        execve(_exec_args.interpreter.c_str(), argv_copy.data(), envp_copy.data());//Запускаем скрипт в интерпретаторе
-        exit(1);//Если не смогли выполнить функцию execve то закрываем дочерний процесс с ошибкой
+        std::string script_dir = _exec_args.path_absolut.substr(0, _exec_args.path_absolut.find_last_of('/'));//Адрес репертория в котором находиться скрипт, по типу /home/mikerf/projects_group/temp/www/html/uploads
+        if (chdir(script_dir.c_str()) != 0)//Проходим в каталог со скриптом, теперь при вызове execve с аргументом в виде относительного пути , скрипт без проблем найдется в текущем каталоге
+        {
+            perror("chdir");
+            exit(1);
+        }    
+//        execve(_exec_args.data_cgi.pathInterpreter.c_str(), argv_copy.data(), envp_copy.data());
+        execve(_exec_args.data_cgi.pathInterpreter.c_str(), _exec_args.argv_ptrs.data(), _exec_args.envs_ptrs.data());//Запускаем скрипт в интерпретаторе
+            perror("execve");
+            exit(1);//Если не смогли выполнить функцию execve то закрываем дочерний процесс с ошибкой
     }
     else
     {
@@ -324,7 +390,38 @@ std::string Cgi::executeScript(void)
             }
             
         }
+
         close(pipe_in[1]);
+
+        int timeout_ms = 1000 * _exec_args.data_cgi.timeout;
+        struct pollfd fd;
+        fd.fd = pipe_out[0];
+        fd.events = POLLIN;
+
+        int poll_result = poll(&fd, 1, timeout_ms);
+        if (poll_result == 0)
+        {
+            int status;
+            if (waitpid(pid, &status, WNOHANG) == 0)
+            {
+                kill(pid, SIGKILL);
+                waitpid(pid, &status, 0);
+            }
+            close(pipe_out[0]);
+            throw std::runtime_error("504 Gateway Timeout");
+        }
+
+        if (poll_result < 0)
+        {
+            int status;
+            if (waitpid(pid, &status, WNOHANG) == 0)
+            {
+                kill(pid, SIGKILL);
+                waitpid(pid, &status, 0);
+            }
+            close(pipe_out[0]);
+            throw std::runtime_error("500 Internal Server Error: poll failed");
+        }
 
         std::string repense;
         char buffer[4096];
@@ -334,6 +431,7 @@ std::string Cgi::executeScript(void)
         { 
             repense.append(buffer, bytes);
         }
+
         close(pipe_out[0]);
 
         int status;
@@ -417,6 +515,8 @@ std::string Cgi::cgiHandler(void)
             }
             if (headers.find("Content-Length") == std::string::npos)
                 response += "Content-Length: " + to_string_98(body.length()) + "\r\n";
+            if (headers.find("Content-Type") == std::string::npos)
+                response += "Content-Type: text/html\r\n";
             http_response += response;
             http_response += "\r\n";
             http_response += body;
@@ -424,7 +524,7 @@ std::string Cgi::cgiHandler(void)
         else
         {
             http_response += "Content-Type: text/html\r\n";
-            http_response += "Content-Length:" + to_string_98(output.length()) + "\r\n";
+            http_response += "Content-Length: " + to_string_98(output.length()) + "\r\n";
             http_response += "\r\n";
             http_response += output;
         }
@@ -438,4 +538,3 @@ std::string Cgi::cgiHandler(void)
         return composeErrorResponse(error);
     }
 }
-
