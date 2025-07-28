@@ -7,8 +7,21 @@
 
 
 class Client {
+private:
+    bool          finished;
+    int           fd;
+    int           listen_fd;
+    int           clientPort;
+    std::string   clientIP;
+    std::string   serverIP;
+    int           serverPort;
+    ServerConfig* config;
+    std::string   readBuffer;
+    std::string   writeBuffer;
+
 public:
-    Client(int fd, ServerConfig *config, const std::string& ip, int port);
+    Client(int fd, ServerConfig *config, const std::string& client_ip, int client_port,
+        const std::string& server_ip, int server_port);
     ServerConfig* getConfig() const { return config; }   
     ~Client();
 
@@ -26,19 +39,9 @@ public:
     int getClientPort() const { return clientPort; }
     void setListenFd(int fd) { listen_fd = fd; }
     int getListenFd() const { return listen_fd; }
+    std::string getServerIP() const { return serverIP; }
+    int getServerPort() const { return serverPort; }
     void updateConfig(ServerConfig* newConfig) { config = newConfig; }
-
-
-
-private:
-    int           fd;
-    int           listen_fd;
-    int           clientPort;
-    bool          finished;
-    ServerConfig* config;
-    std::string   readBuffer;
-    std::string   writeBuffer;
-    std::string   clientIP;
 };
 
 #endif

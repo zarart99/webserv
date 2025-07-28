@@ -92,7 +92,15 @@ void Server::initListeners(const std::vector<ServerConfig> &configs)
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_port = htons(listenInfo.port);
-        addr.sin_addr.s_addr = inet_addr(listenInfo.ip.c_str());
+        
+        // Проверяем корректность IP-адреса
+        in_addr_t addr_result = inet_addr(listenInfo.ip.c_str());
+        if (addr_result == INADDR_NONE) {
+            std::cerr << "Неверный IP-адрес: " << listenInfo.ip << std::endl;
+            close(listen_fd);
+            continue;
+        }
+        addr.sin_addr.s_addr = addr_result;
 
         // Привязываем сокет к адресу и порту
         if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
@@ -203,16 +211,25 @@ void Server::acceptNewClient(int listen_fd)
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
     
+    // Получаем информацию о сервере
+    struct sockaddr_in server_addr;
+    socklen_t server_len = sizeof(server_addr);
+    getsockname(listen_fd, (struct sockaddr*)&server_addr, &server_len);
+    
     int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
     if (client_fd < 0)
-        return;
-        
+        return; // todo - обработка ошибки должна ли быть
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
     
     // Получаем IP и порт клиента
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
     int client_port = ntohs(client_addr.sin_port);
+
+    // Получаем IP и порт сервера
+    char server_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(server_addr.sin_addr), server_ip, INET_ADDRSTRLEN);
+    int server_port = ntohs(server_addr.sin_port);
     
     // Добавляем в poll
     struct pollfd pfd;
@@ -220,7 +237,7 @@ void Server::acceptNewClient(int listen_fd)
     pfd.events = POLLIN | POLLOUT;
     pfd.revents = 0;
     fds.push_back(pfd);
-    // Проверяем лимит клиентов - для C++98
+    // Проверяем лимит клиентов
     if (clients.size() >= CLIENT_MAX_NUMBER) {
         close(client_fd);
         std::cout << "Достигнут максимальный лимит клиентов" << std::endl;
@@ -229,9 +246,11 @@ void Server::acceptNewClient(int listen_fd)
     // Используем первую конфигурацию до получения Host
     if (!listenConfigs[listen_fd].empty()) {
         clients[client_fd] = new Client(client_fd, &listenConfigs[listen_fd][0], 
-                                       client_ip, client_port);
+            client_ip, client_port,
+            server_ip, server_port);
         clients[client_fd]->setListenFd(listen_fd);
-        std::cout << "Соединение: " << client_ip << ":" << client_port << std::endl;
+        std::cout << "Connection from IP: " << client_ip << ":" << client_port << " to server: " << server_ip << ":" << server_port << std::endl;
+        // TODO: Порт к которому подсоединяемся вывести
     } else {
         close(client_fd);
         // Удаляем из fds
@@ -243,6 +262,8 @@ void Server::acceptNewClient(int listen_fd)
         }
     }
 }
+
+// TODO соединение сервер-клиент не должно закрываться
 
 void Server::processRequest(int fd)
 {
@@ -260,7 +281,6 @@ void Server::processRequest(int fd)
     // Проверяем, что есть действительная конфигурация
     if (config != NULL) {
         // Используем const_cast, поскольку updateConfig ожидает не-константный указатель
-        // Это безопасно, так как мы не изменяем саму конфигурацию внутри Client
         clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
         
         // Обрабатываем запрос
@@ -290,4 +310,17 @@ void Server::removeClient(int client_fd)
             break;
         }
     }
+}
+
+int Server::getServerPort(int listen_fd) {
+    struct sockaddr_in server_addr;
+    socklen_t server_len = sizeof(server_addr);
+    if (getsockname(listen_fd, (struct sockaddr*)&server_addr, &server_len) == 0) {
+        return ntohs(server_addr.sin_port);
+    }
+    // Запасной вариант, если getsockname не сработал
+    if (!listenConfigs[listen_fd].empty() && !listenConfigs[listen_fd][0].listen.empty()) {
+        return listenConfigs[listen_fd][0].listen[0].port;
+    }
+    return 0; // Неизвестный порт
 }

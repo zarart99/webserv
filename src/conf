@@ -1,9 +1,9 @@
 server {
 	listen 127.0.0.1:8001;
-	server_name localhost my_new_site;
+	server_name localhost;
 
 	location / {
-        root /www/html;
+        root /Users/asegerasimov/Documents/study_repo/web_serv/www/html;
 		index index.html index.htm;
 		allow_methods GET;
 		autoindex off;
@@ -14,11 +14,11 @@ server {
     	root /www/html/api;
 		allow_methods GET POST;
 		client_max_body_size 10M;
-		cgi .py /usr/bin/php-cgi;
+		cgi .php /opt/homebrew/bin/php;
     }
 
 	location /uploads {
-		root /www/html/uploads;
+		root /Users/asegerasimov/Documents/study_repo/web_serv/www/html/uploads;
 		allow_methods GET POST DELETE;
 		autoindex on;
 		error_page 404 /errors/404.html;
@@ -26,7 +26,7 @@ server {
 }
 
 server {
-	listen 196.0.0.1:8001;
+	listen 0.0.0.0:8080;
 	server_name mysite;
 	error_page 404 /errors/404.html;
 	

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Загрузка файлов</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f8f9fa;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #444;
+    }
+
+    form {
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    input[type="file"] {
+      font-size: 1rem;
+    }
+
+    button, input[type="submit"] {
+      padding: 0.5rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .file-list {
+      background: #fff;
+      padding: 1rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    }
+
+    .file-entry {
+      margin-bottom: 1rem;
+    }
+
+    .file-entry img {
+      max-width: 150px;
+      display: block;
+      margin-top: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    a {
+      text-decoration: none;
+      color: #007bff;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .preview {
+      margin-top: 1rem;
+      max-width: 150px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Загрузка файлов</h1>
+
+  <form method="POST" enctype="multipart/form-data" onsubmit="return validateForm()">
+    <input type="file" name="file" id="fileInput" required>
+    <input type="submit" value="Загрузить">
+    <div id="previewContainer"></div>
+  </form>
+
+  <div class="file-list">
+    <h2>Загруженные файлы</h2>
+    {{FILES}}
+  </div>
+
+  <script>
+    const input = document.getElementById("fileInput");
+    const preview = document.getElementById("previewContainer");
+
+    input.addEventListener("change", function () {
+      preview.innerHTML = "";
+      const file = this.files[0];
+      if (file && file.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        img.classList.add("preview");
+        preview.appendChild(img);
+      }
+    });
+
+    function validateForm() {
+      const file = input.files[0];
+      if (!file) {
+        alert("Выберите файл!");
+        return false;
+      }
+      const maxSizeMB = 5;
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        alert("Файл слишком большой. Макс: 5MB.");
+        return false;
+      }
+      return true;
+    }
+  </script>
+
+</body>
+</html>

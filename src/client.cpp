@@ -4,15 +4,11 @@
 #include "HttpResponse.hpp"
 #include <cstdlib>
 
-Client::Client(int fd, ServerConfig *config, const std::string &ip = "0.0.0.0", int port = 80)
-    : fd(fd),
-      listen_fd(-1),
-      clientPort(port),
-      finished(false),
-      config(config),
-      clientIP(ip)
-{
-}
+Client::Client(int fd, ServerConfig *config, const std::string& client_ip, int client_port,
+            const std::string& server_ip, int server_port)
+            : finished(false), fd(fd), listen_fd(0), clientPort(client_port),
+            clientIP(client_ip), serverIP(server_ip), serverPort(server_port),
+            config(config), readBuffer(""), writeBuffer("") {}
 
 Client::~Client() { close(fd); }
 
@@ -50,11 +46,23 @@ void Client::handleWrite()
     if (writeBuffer.empty())
         return;
     int n = send(fd, writeBuffer.c_str(), writeBuffer.size(), 0);
-    std::cout << "Response sent and connection closing (fd=" << fd << ")\n";
-    if (n > 0)
+    
+    if (n > 0) {
         writeBuffer.erase(0, n);
-    if (writeBuffer.empty())
-        finished = true; // если отправлено всё
+        if (writeBuffer.empty()) {
+            std::cout << "Response sent and connection closing (fd=" << fd << ")\n";
+            finished = true; // если отправлено всё
+        }
+    } 
+    else if (n == 0) {
+        // Zero bytes sent (unusual but possible)
+        std::cout << "Zero bytes sent, possible connection issue (fd=" << fd << ")\n";
+    }
+    else if (n < 0) {
+        // Error occurred
+        std::cerr << "Write error on fd " << fd << std::endl;
+        finished = true; // Mark as finished due to error
+    }
 }
 
 std::string &Client::getRequestBuffer() { return readBuffer; }
