@@ -288,21 +288,32 @@ void Server::processRequest(int fd)
         host = req.getHeaders().at("host");
     
     // Получаем listen_fd и находим подходящую конфигурацию
-    int listen_fd = clients[fd]->getListenFd();
-    const ServerConfig* config = findMatchingConfig(listenConfigs[listen_fd], host);
+//    int listen_fd = clients[fd]->getListenFd();
+//    const ServerConfig* config = findMatchingConfig(listenConfigs[listen_fd], host);//По как что убрал , переделай если он тебе где то нужнен либо удали
     
     // Проверяем, что есть действительная конфигурация
-    if (config != NULL) {
+ //   if (config != NULL) { //Саня я пока что убрал это так как не знаю тебе нужен в твоем коде сервер из конфига или нет? плюс твоя функция которая ищет сервер не совсем корректно работает
         // Используем const_cast, поскольку updateConfig ожидает не-константный указатель
-        clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
-        
-        // Обрабатываем запрос
+        // Это безопасно, так как мы не изменяем саму конфигурацию внутри Client
+//        clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
+
+    Cgi script(cfg, req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
+    HttpResponse resp;
+    if (script.isCgi())
+    {
+        // Обрабатываем cgi запрос 
+        std::string response = script.cgiHandler();
+        clients[fd]->setResponse(response);
+    }
+    else
+    {
+        // Обрабатываем обычный запрос     
         RequestHandler handler(cfg);
-        HttpResponse resp = handler.handleRequest(req, config->listen[0].port, host);
-        
+        resp = handler.handleRequest(req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
         // Устанавливаем ответ
         clients[fd]->setResponse(resp.buildResponse());
     }
+//    }
 }
 
 void Server::removeClient(int client_fd)

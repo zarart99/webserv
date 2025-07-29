@@ -19,20 +19,25 @@ server {
 	location /api {
     	root /www/html/api;
 		allow_methods GET POST;
-		client_max_body_size 10M;
-		cgi .php /usr/bin/php-cgi;
+		client_max_body_size 1M;
+		cgi .php /usr/bin/php-cgi 40;
     }
 
 	location /uploads {
-		root www/html/uploads;
-		allow_methods GET POST DELETE;
+		root /www/html/uploads;
+		allow_methods GET POST;
 		autoindex on;
+		index index.php;
+		upload_path yyy;
+		client_max_body_size 10M;
 		error_page 404 /errors/404.html;
+		cgi .php /usr/bin/php-cgi 40;
+		cgi .py /usr/bin/python3;
     }
 }
 
 server {
-	listen 0.0.0.0:8080;
+	listen 0.0.0.0:8006;
 	server_name mysite;
 	error_page 404 /errors/404.html;
 	
