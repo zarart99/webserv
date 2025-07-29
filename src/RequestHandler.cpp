@@ -146,6 +146,19 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
             return _createErrorResponse(404, server_config, NULL);
         }
 
+        // После поиска подходящего location — проверяем, нужно ли делать редирект
+        if (!location_config->redir.empty())
+        {
+            // Берём код и URL из конфига
+            int code = location_config->redir.begin()->first;
+            std::string url = location_config->redir.begin()->second;
+            // Формируем ответ-редирект
+            HttpResponse res;
+            res.setStatusCode(code);
+            res.addHeader("Location", url);
+            return res;
+        }
+
         // Проверяем, 413
 
         size_t limit_in_bytes = location_config->client_max_body_size;
