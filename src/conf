@@ -34,6 +34,10 @@ server {
 		cgi .php /usr/bin/php-cgi 40;
 		cgi .py /usr/bin/python3;
     }
+
+	location /old-page {
+		return 302 https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTkSlSYTkwa_n-97GNYtglLb9lO6B-adBchUQ&s;
+	}
 }
 
 server {
