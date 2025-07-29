@@ -149,14 +149,23 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
         // После поиска подходящего location — проверяем, нужно ли делать редирект
         if (!location_config->redir.empty())
         {
-            // Берём код и URL из конфига
-            int code = location_config->redir.begin()->first;
-            std::string url = location_config->redir.begin()->second;
-            // Формируем ответ-редирект
-            HttpResponse res;
-            res.setStatusCode(code);
-            res.addHeader("Location", url);
-            return res;
+            std::map<int, std::string>::const_iterator it = location_config->redir.begin();
+            int code = it->first;                // код редиректа или ошибки
+            const std::string &url = it->second; // URL или пустая строка
+
+            if (!url.empty())
+            {
+                // Это редирект на полный URL
+                HttpResponse res;
+                res.setStatusCode(code);        // 301, 302 и т.д.
+                res.addHeader("Location", url); // браузер перейдёт по этой ссылке
+                return res;
+            }
+            else if (code >= 400 && code < 600)
+            {
+                // Только код ошибки → рисуем страницу через общий генератор
+                return _createErrorResponse(code, server_config, NULL, location_config);
+            }
         }
 
         // Проверяем, 413
@@ -645,20 +654,23 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
     }
 
     // 3) Если есть путь к HTML — пробуем его отдать
-    if (!pagePath.empty()) {
+    if (!pagePath.empty())
+    {
         // собираем тот же root, что и в GET
         std::string root = (location && !location->root.empty())
                                ? location->root
                                : server->rootDef;
-        if (!root.empty()) {
+        if (!root.empty())
+        {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)))
                 root = std::string(cwd) + root;
         }
-        std::string fullPath = root + pagePath;  // <-- теперь это "<cwd>/www/html/error/404.html"
-    
+        std::string fullPath = root + pagePath; // <-- теперь это "<cwd>/www/html/error/404.html"
+
         std::ifstream file(fullPath.c_str());
-        if (file.is_open()) {
+        if (file.is_open())
+        {
             std::string body((std::istreambuf_iterator<char>(file)),
                              std::istreambuf_iterator<char>());
             response.setBody(body);
@@ -687,7 +699,7 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
     return response;
 }
 
-const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string& ip, const std::string &host) const
+const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string &ip, const std::string &host) const
 {
     if (!_config)
         return NULL;
@@ -699,18 +711,18 @@ const ServerConfig *RequestHandler::_findServerConfig(int port, const std::strin
     {
         for (size_t i = 0; i < it->listen.size(); i++)
         {
-            if (it->listen[i].port == port)//Сначала сравниваем по port
+            if (it->listen[i].port == port) // Сначала сравниваем по port
             {
-                if (it->listen[i].ip == ip || it->listen[i].ip == "0.0.0.0")//Если Ip одинаковые либо в листен прописан 0.0.0.0 то все ок идем дальше
+                if (it->listen[i].ip == ip || it->listen[i].ip == "0.0.0.0") // Если Ip одинаковые либо в листен прописан 0.0.0.0 то все ок идем дальше
                 {
-                    for (size_t i_2 = 0; i_2 < it->server_name.size(); i_2++)//Ищем похожиее имя домена
+                    for (size_t i_2 = 0; i_2 < it->server_name.size(); i_2++) // Ищем похожиее имя домена
                     {
-                        if (it->server_name[i_2] == host)//Если находим то это наш сервер
+                        if (it->server_name[i_2] == host) // Если находим то это наш сервер
                             return &(*it);
                     }
                     if (!isDefault)
                     {
-                        default_server_for_port = &(*it);//Первый сервер с совпадением по IP/PORT становиться дефолтным, отправляем его если нет совпадений по имени домена
+                        default_server_for_port = &(*it); // Первый сервер с совпадением по IP/PORT становиться дефолтным, отправляем его если нет совпадений по имени домена
                         isDefault = true;
                     }
                     break;

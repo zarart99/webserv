@@ -35,6 +35,13 @@ server {
 		cgi .py /usr/bin/python3;
     }
 
+	location /redirect_to_error {
+		root /www/html;
+		return 405;
+		error_page 405 /error/405.html;
+
+	}
+	
 	location /old-page {
 		return 302 https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTkSlSYTkwa_n-97GNYtglLb9lO6B-adBchUQ&s;
 	}
