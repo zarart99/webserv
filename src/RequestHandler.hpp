@@ -6,13 +6,15 @@
 #include "ConfigParser.hpp"
 #include "utils.hpp"
 
-struct MultipartPart {
+struct MultipartPart
+{
     std::string name;
     std::string filename;
     std::string body;
 };
 
-class RequestHandler {
+class RequestHandler
+{
 public:
     RequestHandler();
     RequestHandler(const ConfigParser& config);
@@ -29,15 +31,15 @@ protected:
 private:
     const ConfigParser* _config;
 
-    HttpResponse _handleGet(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
-    HttpResponse _handlePost(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
-    HttpResponse _handleSimplePost(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
-    HttpResponse _handleMultipart(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
-    std::string saveBodyToFile(const std::string& body, const std::string& suggestedName,
-                               const LocationStruct& location, const ServerConfig& server);
-    HttpResponse _handleDelete(const HttpRequest& request, const LocationStruct& location, const ServerConfig& server);
+    HttpResponse _handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
+    HttpResponse _handlePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
+    HttpResponse _handleSimplePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
+    HttpResponse _handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
+    std::string saveBodyToFile(const std::string &body, const std::string &suggestedName,
+                               const LocationStruct &location, const ServerConfig &server);
+    HttpResponse _handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
 
-    HttpResponse _createErrorResponse(int statusCode, const ServerConfig* server, const std::vector<std::string>* allowed_methods = NULL);
+    HttpResponse _createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods, const LocationStruct *location = NULL);
 };
 
 #endif
