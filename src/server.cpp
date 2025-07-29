@@ -230,8 +230,10 @@ void Server::acceptNewClient(int listen_fd)
     getsockname(listen_fd, (struct sockaddr*)&server_addr, &server_len);
     
     int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
-    if (client_fd < 0)
-        return; // todo - обработка ошибки должна ли быть
+    if (client_fd < 0) {
+        std::cerr << "Ошибка при принятии нового соединения: " << strerror(errno) << std::endl;
+        return;
+    }
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
     
     // Получаем IP и порт клиента
@@ -263,7 +265,6 @@ void Server::acceptNewClient(int listen_fd)
             server_ip, server_port);
         clients[client_fd]->setListenFd(listen_fd);
         std::cout << "Connection from IP: " << client_ip << ":" << client_port << " to server: " << server_ip << ":" << server_port << std::endl;
-        // TODO: Порт к которому подсоединяемся вывести
     } else {
         close(client_fd);
         // Удаляем из fds
@@ -318,7 +319,7 @@ void Server::processRequest(int fd)
 
 void Server::removeClient(int client_fd)
 {
-    std::cout << "Закрытие соединения: fd=" << client_fd 
+    std::cout << "Closing connection: fd=" << client_fd 
     << " (" << clients[client_fd]->getClientIP() 
     << ":" << clients[client_fd]->getClientPort() << ")" << std::endl;
 

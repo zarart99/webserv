@@ -16,7 +16,6 @@ void Client::handleRead()
 {
     char buf[4096];
     int n = recv(fd, buf, sizeof(buf), 0);
-    (void)config; // TODO убрать заглушку
 
     if (n > 0)
     {
@@ -25,14 +24,11 @@ void Client::handleRead()
         {
             std::cout << "Processing HTTP request: \n"
                       << readBuffer << std::endl;
-            //HttpResponse httpResponse = handleHttpRequest(readBuffer);
-            //std::string response = httpResponse.buildResponse();
-            //setResponse(response);
         }
     }
     else if (n == 0)
     {
-        finished = true; // клиент закрыл соединение
+        finished = true;
     }
     else if (n < 0)
     {
@@ -51,21 +47,20 @@ void Client::handleWrite()
         writeBuffer.erase(0, n);
         if (writeBuffer.empty()) {
             std::cout << "Response sent and connection closing (fd=" << fd << ")\n";
-            finished = true; // если отправлено всё
+            finished = true;
         }
     } 
     else if (n == 0) {
-        // Zero bytes sent (unusual but possible)
         std::cout << "Zero bytes sent, possible connection issue (fd=" << fd << ")\n";
     }
     else if (n < 0) {
-        // Error occurred
         std::cerr << "Write error on fd " << fd << std::endl;
-        finished = true; // Mark as finished due to error
+        finished = true;
     }
 }
 
 std::string &Client::getRequestBuffer() { return readBuffer; }
+
 bool Client::isRequestReady()
 {
     size_t headEnd = readBuffer.find("\r\n\r\n");
@@ -92,7 +87,9 @@ bool Client::isRequestReady()
     return true;
 }
 void Client::setResponse(const std::string &resp) { writeBuffer = resp; }
+
 bool Client::isDone() { return finished; }
 
 std::string &Client::getReadBuffer() { return readBuffer; }
+
 std::string &Client::getWriteBuffer() { return writeBuffer; }

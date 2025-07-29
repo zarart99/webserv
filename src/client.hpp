@@ -2,7 +2,6 @@
 #define CLIENT_HPP
 
 #include <string>
-//#include "config.hpp"
 #include "ConfigParser.hpp"
 
 
