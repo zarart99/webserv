@@ -9,6 +9,96 @@
 #include <ctime>
 #include <cstdlib>
 #include <cctype>
+#include <map>
+#include <vector>
+#include <limits.h>
+
+std::vector<MultipartPart> parseMultipart(const std::string &rawBody, const std::string &boundary)
+{
+    std::vector<MultipartPart> parts;
+    std::string delim = "--" + boundary;
+    size_t pos = rawBody.find(delim);
+    if (pos == std::string::npos)
+        throw std::runtime_error("no boundary");
+    while (true)
+    {
+        if (rawBody.compare(pos, delim.size(), delim) != 0)
+            throw std::runtime_error("bad boundary");
+        pos += delim.size();
+        if (rawBody.compare(pos, 2, "--") == 0)
+            break; // reached closing boundary
+        if (rawBody.compare(pos, 2, "\r\n") == 0)
+            pos += 2;
+
+        size_t header_end = rawBody.find("\r\n\r\n", pos);
+        if (header_end == std::string::npos)
+            throw std::runtime_error("bad headers");
+        std::string header_block = rawBody.substr(pos, header_end - pos);
+        pos = header_end + 4;
+
+        MultipartPart part;
+        part.name = "";
+        part.filename = "";
+
+        std::stringstream hs(header_block);
+        std::string line;
+        bool cd_found = false;
+        while (std::getline(hs, line))
+        {
+            if (!line.empty() && line[line.size() - 1] == '\r')
+                line.erase(line.size() - 1);
+            size_t colon = line.find(':');
+            if (colon == std::string::npos)
+                throw std::runtime_error("bad header line");
+            std::string key = toLower(trim(line.substr(0, colon)));
+            std::string value = trim(line.substr(colon + 1));
+            if (key == "content-disposition")
+            {
+                cd_found = true;
+                size_t name_pos = value.find("name=");
+                if (name_pos != std::string::npos)
+                {
+                    name_pos += 5;
+                    if (value[name_pos] == '"')
+                    {
+                        ++name_pos;
+                        size_t end = value.find('"', name_pos);
+                        if (end == std::string::npos)
+                            throw std::runtime_error("bad name");
+                        part.name = value.substr(name_pos, end - name_pos);
+                    }
+                }
+                size_t fn_pos = value.find("filename=");
+                if (fn_pos != std::string::npos)
+                {
+                    fn_pos += 9;
+                    if (value[fn_pos] == '"')
+                    {
+                        ++fn_pos;
+                        size_t end = value.find('"', fn_pos);
+                        if (end == std::string::npos)
+                            throw std::runtime_error("bad filename");
+                        part.filename = value.substr(fn_pos, end - fn_pos);
+                    }
+                }
+            }
+        }
+        if (!cd_found || part.name.empty())
+            throw std::runtime_error("no content-disposition");
+
+        size_t next = rawBody.find(delim, pos);
+        if (next == std::string::npos)
+            throw std::runtime_error("no closing boundary");
+        size_t body_len = next - pos;
+        if (body_len >= 2 && rawBody.compare(next - 2, 2, "\r\n") == 0)
+            body_len -= 2;
+        part.body = rawBody.substr(pos, body_len);
+        parts.push_back(part);
+
+        pos = next;
+    }
+    return parts;
+}
 
 RequestHandler::RequestHandler() : _config(NULL) {}
 
@@ -116,13 +206,16 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
 HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
     // Определяем корневую директорию: берем из location, если есть, иначе из server
-    std::string root;
-    if (!location.upload_path.empty())
-        root = location.upload_path;
-    else if (!location.root.empty())
-        root = location.root;
-    else
-        root = server.rootDef;                            // Собираем абсолютный путь: нормализуем URI и склеиваем с корнем
+    std::string root = !location.root.empty()
+                           ? location.root
+                           : server.rootDef;
+    // Если путь относительный – приводим к абсолютному через getcwd()
+    if (!root.empty())
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            root = std::string(cwd) + root;
+    }
     std::string normUri = normalizeUri(request.getUri()); // защита от "../"
     //  Отрезаем префикс локации (alias-логика)
     const std::string &prefix = location.prefix;
@@ -210,6 +303,18 @@ HttpResponse RequestHandler::_handleGet(const HttpRequest &request, const Locati
 
 HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
+    std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
+    if (it != request.getHeaders().end())
+    {
+        std::string ct_lower = toLower(it->second);
+        if (ct_lower.find("multipart/form-data") == 0 && ct_lower.find("boundary=") != std::string::npos)
+            return _handleMultipart(request, location, server);
+    }
+    return _handleSimplePost(request, location, server);
+}
+
+HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
+{
     std::string upload_dir;
     if (!location.upload_path.empty())
         upload_dir = location.upload_path;
@@ -218,32 +323,160 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     else
         upload_dir = server.rootDef;
 
-    if (upload_dir.empty()) // Если нет ни одной валидной директории ⇒ внутренняя ошибка конфигурации
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            upload_dir = std::string(cwd) + upload_dir;
+    }
+
+    if (upload_dir.empty())
         return _createErrorResponse(500, &server);
 
-    std::string prefix = location.prefix; //   Очищаем prefix от лишнего «/» в конце, чтобы избежать двойных слэшей при формировании Location
-
+    std::string prefix = location.prefix;
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
         prefix.erase(prefix.size() - 1);
 
-    std::string rel = request.getUri(); // Вычленяем из полного URI часть после префикса локации:/uploads/myfile.bin → myfile.bin
+    std::string rel = request.getUri();
     if (rel.rfind(prefix, 0) == 0)
         rel = rel.substr(prefix.length());
     if (!rel.empty() && rel[0] == '/')
         rel.erase(0, 1);
 
-    std::string filename;
-    if (!rel.empty() && rel.find('/') == std::string::npos) // Если rel не содержит «/», это простое имя файла:оставляем только буквы, цифры, '.', '-' и '_'
+    std::string filename = saveBodyToFile(request.getBody(), rel, location, server);
+    if (filename.empty())
+        return _createErrorResponse(500, &server);
+
+    HttpResponse response;
+    response.setStatusCode(201);
+    response.addHeader("Location", prefix + "/" + filename);
+    return response;
+}
+
+HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
+{
+    std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
+    if (it == request.getHeaders().end())
+        return _createErrorResponse(400, &server);
+
+    std::string ct = it->second;
+    std::string lower = toLower(ct);
+    size_t bpos = lower.find("boundary="); // Извлекаем параметр boundary из заголовка
+    if (bpos == std::string::npos)
+        return _createErrorResponse(400, &server);
+    std::string boundary = ct.substr(bpos + 9);
+    boundary = trim(boundary);
+    if (!boundary.empty() && boundary[0] == '"') // — если boundary в кавычках, убираем их
     {
-        for (size_t i = 0; i < rel.size(); ++i)
+        boundary.erase(0, 1);
+        size_t q = boundary.find('"');
+        if (q != std::string::npos)
+            boundary = boundary.substr(0, q);
+    }
+    else // — если после boundary идут дополнительные параметры, отсекаем всё после ';'
+    {
+        size_t sc = boundary.find(';');
+        if (sc != std::string::npos)
+            boundary = boundary.substr(0, sc);
+    }
+    if (boundary.empty())
+        return _createErrorResponse(400, &server);
+
+    std::vector<MultipartPart> parts; // Разбираем всё тело на отдельные части по найденному boundary
+    try
+    {
+        parts = parseMultipart(request.getBody(), boundary);
+    }
+    catch (const std::exception &)
+    {
+        return _createErrorResponse(400, &server);
+    }
+
+    std::vector<std::string> uploadedFiles; // Контейнеры: для сохранённых файлов и для полей формы
+    std::map<std::string, std::string> formFields;
+
+    for (size_t i = 0; i < parts.size(); ++i) // Обрабатываем каждую часть multipart
+
+    {
+        if (!parts[i].filename.empty()) // Часть с filename — значит, это файл. Сохраняем его.
         {
-            char c = rel[i];
-            if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.')
-                filename += c;
+            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, location, server);
+            if (fname.empty())
+                return _createErrorResponse(500, &server);
+            std::string prefix = location.prefix; // Формируем URL доступа (удаляем хвостовой '/')
+
+            if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
+                prefix.erase(prefix.size() - 1);
+            uploadedFiles.push_back(prefix + "/" + fname);
+        }
+        else // Часть без filename — текстовое поле формы. Сохраняем в map
+        {
+            formFields[parts[i].name] = parts[i].body;
         }
     }
 
-    if (filename.empty()) // Если клиент не задал имя → генерируем уникальное
+    HttpResponse response;
+    if (uploadedFiles.size() == 1 && formFields.empty()) // Если только один файл и нет полей формы, возвращаем 201 с Location
+    {
+        response.setStatusCode(201);
+        response.addHeader("Location", uploadedFiles[0]);
+        return response;
+    }
+
+    response.setStatusCode(200); // Если есть и файлы, и поля формы, возвращаем 200 с JSON-ответом
+    response.addHeader("Content-Type", "application/json; charset=utf-8");
+    std::stringstream body;
+    body << "{\n  \"files\": [";
+    for (size_t i = 0; i < uploadedFiles.size(); ++i)
+    {
+        if (i)
+            body << ", ";
+        body << "\"" << uploadedFiles[i] << "\"";
+    }
+    body << "],\n  \"fields\": {";
+    for (std::map<std::string, std::string>::const_iterator mit = formFields.begin(); mit != formFields.end();)
+    {
+        body << "\"" << mit->first << "\": \"" << mit->second << "\"";
+        if (++mit != formFields.end())
+            body << ", ";
+    }
+    body << "}\n}";
+    response.setBody(body.str());
+    return response;
+}
+
+std::string RequestHandler::saveBodyToFile(const std::string &body, const std::string &suggestedName,
+                                           const LocationStruct &location, const ServerConfig &server)
+{
+    std::string dir;
+    if (!location.upload_path.empty())
+        dir = location.upload_path;
+    else if (!location.root.empty())
+        dir = location.root;
+    else
+        dir = server.rootDef;
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            dir = std::string(cwd) + dir;
+    }
+    if (dir.empty())
+        return "";
+
+    std::string filtered;
+    for (size_t i = 0; i < suggestedName.size(); ++i)
+    {
+        char c = suggestedName[i];
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '-')
+            filtered += c;
+    }
+
+    std::string filename = filtered;
+    std::string ext;
+    size_t dot = suggestedName.find_last_of('.');
+    if (dot != std::string::npos)
+        ext = suggestedName.substr(dot);
+
+    if (filename.empty())
     {
         static bool seeded = false;
         if (!seeded)
@@ -252,63 +485,86 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
             seeded = true;
         }
         std::ostringstream oss;
-        oss << std::time(NULL) << "_" << std::rand() << ".bin";
+        oss << std::time(NULL) << "_" << std::rand();
+        if (!ext.empty())
+            oss << ext;
+        else
+            oss << ".bin";
         filename = oss.str();
     }
 
-    std::string full_path = upload_dir;
-    if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
-        full_path += "/";
-    full_path += filename; // Собираем полный путь до файла
+    std::string path = dir;
+    if (!path.empty() && path[path.size() - 1] != '/')
+        path += "/";
+    path += filename;
 
-    if (access(full_path.c_str(), F_OK) == 0)
+    if (access(path.c_str(), F_OK) == 0)
     {
         std::string base = filename;
-        std::string ext;
-        size_t dot = filename.find_last_of('.');
-        if (dot != std::string::npos)
+        std::string extension;
+        size_t d = filename.find_last_of('.');
+        if (d != std::string::npos)
         {
-            base = filename.substr(0, dot);
-            ext = filename.substr(dot);
+            base = filename.substr(0, d);
+            extension = filename.substr(d);
         }
         int counter = 1;
         do
         {
             std::ostringstream oss;
-            oss << base << "_" << counter << ext; // Если дубликация, добавляем счетчик
+            oss << base << "_" << counter << extension;
             filename = oss.str();
-            full_path = upload_dir;
-            if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
-                full_path += "/";
-            full_path += filename;
+            path = dir;
+            if (!path.empty() && path[path.size() - 1] != '/')
+                path += "/";
+            path += filename;
             ++counter;
-        } while (access(full_path.c_str(), F_OK) == 0);
+        } while (access(path.c_str(), F_OK) == 0);
     }
 
-    std::ofstream file(full_path.c_str(), std::ios::binary);
+    std::ofstream file(path.c_str(), std::ios::binary);
     if (!file.is_open())
-    {
-        return _createErrorResponse(500, &server);
-    }
-    file.write(request.getBody().c_str(), request.getBody().length());
+        return "";
+    file.write(body.c_str(), body.size());
     if (file.fail())
     {
         file.close();
-        return _createErrorResponse(500, &server);
+        return "";
     }
     file.close();
-
-    HttpResponse response;
-    response.setStatusCode(201);
-    std::string loc_hdr = prefix + "/" + filename;
-    response.addHeader("Location", loc_hdr);
-    return response;
+    return filename;
 }
 
 HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    std::string root = !location.root.empty() ? location.root : server.rootDef;
-    std::string path = root + request.getUri();
+    // 1) Выбираем, в какую папку удалять — upload_path → root → server.rootDef
+    std::string upload_dir = !location.upload_path.empty()
+                                 ? location.upload_path
+                                 : (!location.root.empty()
+                                        ? location.root
+                                        : server.rootDef);
+
+    // приводим к абсолютному, если путь относительный
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)))
+            upload_dir = std::string(cwd) + upload_dir;
+    }
+    // 2) Обрезаем префикс локации, чтобы не дублировать /uploads
+    std::string prefix = location.prefix;
+    if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
+        prefix.erase(prefix.size() - 1);
+    std::string rel = request.getUri();  // "/uploads/test.png"
+    if (rel.rfind(prefix, 0) == 0)       // если начинается с "/uploads"
+        rel = rel.substr(prefix.size()); // → "/test.png"
+    if (!rel.empty() && rel[0] == '/')
+        rel.erase(0, 1); // → "test.png"
+
+    // 3) Собираем настоящий полный путь
+    std::string path = upload_dir;
+    if (!path.empty() && path[path.size() - 1] != '/')
+        path += "/";
+    path += rel; // "/www/html/uploads/test.png"
 
     if (access(path.c_str(), F_OK) == -1)
     {

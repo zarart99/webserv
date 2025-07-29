@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <algorithm> // для std::transform
-#include <cctype>    // для ::tolower
+#include "utils.hpp" // для trim и toLower
 #include <iostream>  // для вывода ошибок
 
 class HttpRequest

@@ -121,7 +121,10 @@ void ConfigParser::parseConfigFile(std::string const & fileName )
 			}
 		}
 	if (braceNb != 0)
+	{
+		file.close();
 		throw std::runtime_error("Error: too mach brace on congig file!");
+	}
 	}
 	file.close();
 	if (!validateGlobalUniqueListen())

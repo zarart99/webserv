@@ -41,6 +41,7 @@ struct RequestServer
 {
 	std::string ip;
 	std::string url;
+	std::string index_url;//Здесь храниться путь к файлу если сработала деректива index в cgi
 	std::string ext;//Расширение скрипта если он есть 
 	int port;
 	std::string host;

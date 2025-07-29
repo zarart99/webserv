@@ -51,7 +51,10 @@ void Cgi::findQuery(void)//Функия для поиска переменной
     else
     {
         query = "QUERY_STRING=";//Если символа нет то оставляем переменную пустой
-        _data_rec.url = _data_rec.req.getUri();
+        if (!_data_rec.index_url.empty())//Если сработала директива index, то берем url из нее
+            _data_rec.url = _data_rec.index_url;
+        else
+            _data_rec.url = _data_rec.req.getUri();//Если нет то из запроса
     }
 
     _exec_args.data_envp.query = query;
@@ -82,15 +85,45 @@ bool Cgi::isCgi(void)
         return false;
     }
 
-    findQuery();//Отделяем query от url и сохраняем 
-    findPathInfo();//Отделяем path_info от url и сохраняем .Сохраняем расширение.
-
-    if (_data_rec.ext.empty())//Если расширения нет то значит это не запрос для cgi
-        return false;
-
+    _data_rec.url = _data_rec.req.getUri();
     _location = _findLocationFor(*_server, _data_rec.url);//Ищем location запроса
     if (_location == NULL)//Если у запроса нет location 
         return false;
+
+    size_t pos = _data_rec.req.getUri().find('.');
+    if (pos == std::string::npos)
+    {
+        if (!_location->index.empty() && !_location->cgi.empty())//Если есть деректива индекс и cgi не пустой то проверяем их расширение
+        {
+            for (size_t y = 0; y < _location->index.size(); y++)
+            {    
+                size_t pos = _location->index[y].find_last_of('.');
+                if (pos == std::string::npos)
+                    continue;
+                std::string index_ext = _location->index[y].substr(pos);
+                for (size_t i = 0; i < _location->cgi.size(); i++)//Проходим по всем директивам cgi в location
+                {
+                    if (_location->cgi[i].extension == index_ext)//Если расширение директивы cgi совпадает с расширением url то все ок запускаем cgi
+                    {
+                        _data_rec.index_url = _data_rec.req.getUri() + _location->index[y];
+                        findQuery();//Отделяем query от url и сохраняем 
+                        findPathInfo();//Отделяем path_info от url и сохраняем .Сохраняем расширение.
+                        _data_rec.ext = index_ext;
+                        _exec_args.data_cgi.extension = _data_rec.ext;//Расширение
+                        _exec_args.data_cgi.pathInterpreter = _location->cgi[i].pathInterpreter;//Путь к интерпретатору
+                        _exec_args.data_cgi.timeout = _location->cgi[i].timeout;//timeout
+
+                        return true;
+                    }
+                }
+            }
+        }
+        else
+            return false;
+    }
+    findQuery();//Отделяем query от url и сохраняем 
+    findPathInfo();//Отделяем path_info от url и сохраняем .Сохраняем расширение.
+
 
     for (size_t i = 0; i < _location->cgi.size(); i++)//Проходим по всем директивам cgi в location
     {
@@ -166,7 +199,7 @@ std::string Cgi::findScriptFilename(void)//Функция находит абс�
         absolut_root =  "/" + absolut_root;
 
     std::string script_filename = std::string(cwd) + absolut_root + path; //Создаем абсолютный путь к файлу
-    
+
     script_filename = checkPath(script_filename);//Чистим путь от лишних / или .
     if (script_filename.find(std::string(cwd)) != 0)//Проверяем не вышли ли за корневой каталог
         throw std::runtime_error("403 Forbidden");
@@ -198,11 +231,14 @@ void Cgi::createCgiEnvp(void)
 {
     /*Блок в котором собираем переменные окружения CGI для execve*/
     _exec_args.envs_strings.clear();
-    
     if (checkMethod())
     {
         _exec_args.envs_strings.push_back("REQUEST_METHOD=" + _data_rec.req.getMethod());//Метод запроса
-        _exec_args.envs_strings.push_back("REQUEST_URI=" + _data_rec.req.getUri());//Url запроса начиная от prefixa заканчивая query если есть  ///uploads/index.php/rrr?name=tt
+
+        if (_data_rec.index_url.empty())
+            _exec_args.envs_strings.push_back("REQUEST_URI=" + _data_rec.req.getUri());//Url запроса начиная от prefixa заканчивая query если есть  ///uploads/index.php/rrr?name=tt
+        else
+            _exec_args.envs_strings.push_back("REQUEST_URI=" + _data_rec.index_url);
         _exec_args.envs_strings.push_back(_exec_args.data_envp.query);// Все что после вопроса //name=tt
         _exec_args.envs_strings.push_back("PATH_INFO=" + _exec_args.data_envp.path_info);//Путь после имени файла до query //rrr
         _exec_args.envs_strings.push_back("SCRIPT_NAME=" + _data_rec.url);//prefix + имя скрипта //uploads/index.php
@@ -213,7 +249,6 @@ void Cgi::createCgiEnvp(void)
         _exec_args.envs_strings.push_back("SERVER_PORT=" + to_string_98(_data_rec.port));
         _exec_args.envs_strings.push_back("REMOTE_ADDR=" + _data_rec.ip);
         _exec_args.envs_strings.push_back("GATEWAY_INTERFACE=CGI/1.1");
-
         const std::map<std::string, std::string>& headers = _data_rec.req.getHeaders();
         std::map<std::string, std::string>::const_iterator it;
 
@@ -280,6 +315,13 @@ void Cgi::findArgsExecve(void)//В этой функции готовим арг
     _exec_args.argv_strings.clear();
     _exec_args.argv_ptrs.clear();
     
+
+    if (_data_rec.req.getContentLength() > 0)//Проверка на client_max_body_size
+    {
+        if (_data_rec.req.getContentLength() > _location->client_max_body_size)
+            throw std::runtime_error("413 Payload Too Large");
+    }
+
     if (access(_exec_args.data_cgi.pathInterpreter.c_str(), X_OK) != 0)
         throw std::runtime_error("500 Internal Server Error: Intepretor not exec");
 
@@ -305,20 +347,6 @@ void Cgi::findArgsExecve(void)//В этой функции готовим арг
 std::string Cgi::executeScript(void)
 {
     findArgsExecve();
-    std::vector<char*> argv_copy;
-    std::vector<char*> envp_copy;
-
-    for (size_t i = 0; i < _exec_args.argv_strings.size(); i++)
-    {
-        argv_copy.push_back(const_cast<char*>(_exec_args.argv_strings[i].c_str()));
-    }
-    argv_copy.push_back(NULL);
-
-    for (size_t i = 0; i < _exec_args.envs_strings.size(); i++)
-    {
-        envp_copy.push_back(const_cast<char*>(_exec_args.envs_strings[i].c_str()));
-    }
-    envp_copy.push_back(NULL);
 
     int pipe_in[2];//Через этот пайп передаем данные из родительского процесса в дочерний 
     int pipe_out[2];//Через этот выводим данные из дочернего в родительский 
@@ -351,7 +379,6 @@ std::string Cgi::executeScript(void)
         {   
             close(pipe_in[0]);
             close(pipe_out[1]);
-            perror("dup2");
             exit(1);
         }
 
@@ -360,12 +387,10 @@ std::string Cgi::executeScript(void)
         std::string script_dir = _exec_args.path_absolut.substr(0, _exec_args.path_absolut.find_last_of('/'));//Адрес репертория в котором находиться скрипт, по типу /home/mikerf/projects_group/temp/www/html/uploads
         if (chdir(script_dir.c_str()) != 0)//Проходим в каталог со скриптом, теперь при вызове execve с аргументом в виде относительного пути , скрипт без проблем найдется в текущем каталоге
         {
-            perror("chdir");
             exit(1);
         }    
-//        execve(_exec_args.data_cgi.pathInterpreter.c_str(), argv_copy.data(), envp_copy.data());
+
         execve(_exec_args.data_cgi.pathInterpreter.c_str(), _exec_args.argv_ptrs.data(), _exec_args.envs_ptrs.data());//Запускаем скрипт в интерпретаторе
-            perror("execve");
             exit(1);//Если не смогли выполнить функцию execve то закрываем дочерний процесс с ошибкой
     }
     else
@@ -375,20 +400,27 @@ std::string Cgi::executeScript(void)
 
         if (_data_rec.req.getMethod() == "POST")//Отправляем тело post в скрипт 
         {
-            std::string body = _data_rec.req.getBody();
-            if (!body.empty())
+            size_t total_write = 0;
+            std::string body_str = _data_rec.req.getBody();
+            const char* body = body_str.c_str();
+            size_t to_write = body_str.length();
+
+            if (!_data_rec.req.getBody().empty())
             {
-                ssize_t written = write(pipe_in[1], body.c_str(), body.length());
-                if (written == -1)
+                while (total_write < to_write)//Читаем пока не дойдем до конца 
                 {
-                    close(pipe_in[1]);
-                    close(pipe_out[0]);
-                    int status;
-                    waitpid(pid, &status, 0);
-                    throw std::runtime_error("500 Internal Server Error: CGI script failed");
+                    ssize_t written = write(pipe_in[1], body + total_write, to_write - total_write);
+                    if (written == -1 || written == 0)
+                    {
+                        close(pipe_in[1]);
+                        close(pipe_out[0]);
+                        int status;
+                        waitpid(pid, &status, 0);
+                        throw std::runtime_error("500 Internal Server Error: Error: Write() returned unxpected");
+                    }
+                    total_write = total_write + written;
                 }
             }
-            
         }
 
         close(pipe_in[1]);
@@ -425,7 +457,7 @@ std::string Cgi::executeScript(void)
 
         std::string repense;
         char buffer[4096];
-        size_t bytes;
+        ssize_t bytes;
 
         while((bytes = read(pipe_out[0], buffer, sizeof(buffer))) > 0)
         { 
@@ -433,13 +465,17 @@ std::string Cgi::executeScript(void)
         }
 
         close(pipe_out[0]);
-
         int status;
         waitpid(pid, &status, 0);
+
+        if (bytes == -1)
+            throw std::runtime_error("500 Internal Server Error: Read() returned -1"); 
+
         if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
             throw std::runtime_error("500 Internal Server Error: CGI script failed");
         else if (WIFSIGNALED(status))
             throw std::runtime_error("500 Internal Server Error: CGI script termined by signal");
+
         return repense;
     }
 }
@@ -452,6 +488,11 @@ std::string Cgi::composeErrorResponse(const std::string& error)
     {
         status_error = "404 Not Found";
         body_error = "<h1>404 Not Found</h1>";
+    }
+    else if (error.find("413") != std::string::npos)
+    {
+        status_error = "413 Payload Too Large";
+        body_error = "<h1>413 Payload Too Large</h1>";
     }
     else if (error.find("403") != std::string::npos)
     {
@@ -528,8 +569,8 @@ std::string Cgi::cgiHandler(void)
             http_response += "\r\n";
             http_response += output;
         }
-                printEnvpCgi();
-                std::cout << "\nhttp_response\n" << http_response << std::endl;
+//        printEnvpCgi();
+//        std::cout << "\nhttp_response\n" << http_response << std::endl;
         return http_response;
     }
     catch (const std::exception &e)
