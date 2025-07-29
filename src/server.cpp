@@ -10,6 +10,12 @@
 #include "HttpResponse.hpp"
 
 #define CLIENT_MAX_NUMBER 1000 
+volatile bool running = true;
+
+void signalHandler(int signum) {
+    std::cout << "\nПолучен сигнал прерывания (" << signum << "). Завершение работы..." << std::endl;
+    running = false;
+}
 
 Server::Server(ConfigParser &parser)
     : cfg(parser),
@@ -24,6 +30,7 @@ Server::~Server()
         close(fds[i].fd);
     for (std::map<int, Client *>::iterator it = clients.begin(); it != clients.end(); ++it)
         delete it->second;
+    std::cout << "Все ресурсы освобождены" << std::endl;
 }
 
 const ServerConfig* Server::findMatchingConfig(const std::vector<ServerConfig>& configs, std::string host)
@@ -147,11 +154,17 @@ void Server::initListeners(const std::vector<ServerConfig> &configs)
 
 void Server::run()
 {
-    while (true)
+    signal(SIGINT, signalHandler);
+
+    while (running)
     {
         try
         {
-            int ret = poll(&fds[0], fds.size(), 1000); // 1 сек
+            int ret = poll(&fds[0], fds.size(), 1000);
+
+            if (!running) {
+                break;
+            }
             if (ret < 0)
             {
                 perror("poll");
