@@ -54,6 +54,18 @@
         "ostream": "cpp",
         "sstream": "cpp",
         "streambuf": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "__locale": "cpp",
+        "__verbose_abort": "cpp",
+        "cstring": "cpp",
+        "ctime": "cpp",
+        "execution": "cpp",
+        "iomanip": "cpp",
+        "ios": "cpp",
+        "locale": "cpp",
+        "mutex": "cpp",
+        "print": "cpp",
+        "ratio": "cpp",
+        "variant": "cpp"
     }
 }
