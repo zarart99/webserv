@@ -230,8 +230,10 @@ void Server::acceptNewClient(int listen_fd)
     getsockname(listen_fd, (struct sockaddr*)&server_addr, &server_len);
     
     int client_fd = accept(listen_fd, (struct sockaddr*)&client_addr, &client_len);
-    if (client_fd < 0)
-        return; // todo - обработка ошибки должна ли быть
+    if (client_fd < 0) {
+        std::cerr << "Ошибка при принятии нового соединения: " << strerror(errno) << std::endl;
+        return;
+    }
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
     
     // Получаем IP и порт клиента
@@ -263,7 +265,6 @@ void Server::acceptNewClient(int listen_fd)
             server_ip, server_port);
         clients[client_fd]->setListenFd(listen_fd);
         std::cout << "Connection from IP: " << client_ip << ":" << client_port << " to server: " << server_ip << ":" << server_port << std::endl;
-        // TODO: Порт к которому подсоединяемся вывести
     } else {
         close(client_fd);
         // Удаляем из fds
@@ -276,49 +277,49 @@ void Server::acceptNewClient(int listen_fd)
     }
 }
 
-// TODO соединение сервер-клиент не должно закрываться
-
 void Server::processRequest(int fd)
 {
-    HttpRequest req(clients[fd]->getReadBuffer());
-    
-    // Получаем host из заголовков
-    std::string host;
-    if (req.getHeaders().count("host"))
-        host = req.getHeaders().at("host");
-    
-    // Получаем listen_fd и находим подходящую конфигурацию
-//    int listen_fd = clients[fd]->getListenFd();
-//    const ServerConfig* config = findMatchingConfig(listenConfigs[listen_fd], host);//По как что убрал , переделай если он тебе где то нужнен либо удали
-    
-    // Проверяем, что есть действительная конфигурация
- //   if (config != NULL) { //Саня я пока что убрал это так как не знаю тебе нужен в твоем коде сервер из конфига или нет? плюс твоя функция которая ищет сервер не совсем корректно работает
-        // Используем const_cast, поскольку updateConfig ожидает не-константный указатель
-        // Это безопасно, так как мы не изменяем саму конфигурацию внутри Client
-//        clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
+    try {
+        HttpRequest req(clients[fd]->getReadBuffer());
 
-    Cgi script(cfg, req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
-    HttpResponse resp;
-    if (script.isCgi())
-    {
-        // Обрабатываем cgi запрос 
-        std::string response = script.cgiHandler();
-        clients[fd]->setResponse(response);
+        // Получаем host из заголовков
+        std::string host;
+        if (req.getHeaders().count("host"))
+            host = req.getHeaders().at("host");
+
+        // Получаем listen_fd и находим подходящую конфигурацию
+        int listen_fd = clients[fd]->getListenFd();
+        const ServerConfig* config = findMatchingConfig(listenConfigs[listen_fd], host);//По как что убрал , переделай если он тебе где то нужнен либо удали
+
+        // Проверяем, что есть действительная конфигурация
+        if (config != NULL) {
+            clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
+
+        Cgi script(cfg, req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
+        HttpResponse resp;
+        if (script.isCgi())
+        {
+            // Обрабатываем cgi запрос 
+            std::string response = script.cgiHandler();
+            clients[fd]->setResponse(response);
+        } else
+        {
+            RequestHandler handler(cfg);
+            resp = handler.handleRequest(req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
+            clients[fd]->setResponse(resp.buildResponse());
+        }
+        }
+        clients[fd]->clearReadBuffer();
     }
-    else
-    {
-        // Обрабатываем обычный запрос     
-        RequestHandler handler(cfg);
-        resp = handler.handleRequest(req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
-        // Устанавливаем ответ
-        clients[fd]->setResponse(resp.buildResponse());
+    catch (const std::exception &e) {
+        std::cerr << "Handle request error: " << e.what() << std::endl;
+        clients[fd]->clearReadBuffer();
     }
-//    }
 }
 
 void Server::removeClient(int client_fd)
 {
-    std::cout << "Закрытие соединения: fd=" << client_fd 
+    std::cout << "Closing connection: fd=" << client_fd 
     << " (" << clients[client_fd]->getClientIP() 
     << ":" << clients[client_fd]->getClientPort() << ")" << std::endl;
 
