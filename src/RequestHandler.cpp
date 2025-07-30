@@ -651,7 +651,7 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
         {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)))
-                fullPath = std::string(cwd) + root;
+                root = std::string(cwd) + root;
         }
         std::string fullPath = root + pagePath; // <-- теперь это "<cwd>/www/html/error/404.html"
 
