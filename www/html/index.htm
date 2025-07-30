@@ -2,130 +2,50 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Загрузка файлов</title>
-  <style>
-    body {
-      font-family: "Segoe UI", sans-serif;
-      background: #f8f9fa;
-      padding: 2rem;
-      max-width: 800px;
-      margin: auto;
-      color: #333;
-    }
-
-    h1 {
-      text-align: center;
-      color: #444;
-    }
-
-    form {
-      background: #fff;
-      padding: 1.5rem;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-
-    input[type="file"] {
-      font-size: 1rem;
-    }
-
-    button, input[type="submit"] {
-      padding: 0.5rem 1.2rem;
-      font-size: 1rem;
-      border: none;
-      background-color: #007bff;
-      color: white;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #0056b3;
-    }
-
-    .file-list {
-      background: #fff;
-      padding: 1rem;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-    }
-
-    .file-entry {
-      margin-bottom: 1rem;
-    }
-
-    .file-entry img {
-      max-width: 150px;
-      display: block;
-      margin-top: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-    }
-
-    a {
-      text-decoration: none;
-      color: #007bff;
-    }
-
-    a:hover {
-      text-decoration: underline;
-    }
-
-    .preview {
-      margin-top: 1rem;
-      max-width: 150px;
-    }
-  </style>
+  <title>Тестовый сайт веб-сервера</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-
-  <h1>Загрузка файлов</h1>
-
-  <form method="POST" enctype="multipart/form-data" onsubmit="return validateForm()">
-    <input type="file" name="file" id="fileInput" required>
-    <input type="submit" value="Загрузить">
-    <div id="previewContainer"></div>
-  </form>
-
-  <div class="file-list">
-    <h2>Загруженные файлы</h2>
-    {{FILES}}
+  <div class="container">
+    <h1>Тестирование веб-сервера</h1>
+    
+    <div class="nav-menu">
+      <a href="index.html" class="active">Главная</a>
+      <a href="upload.html">Загрузка файлов (POST)</a>
+      <a href="gallery.html">Галерея (GET/DELETE)</a>
+      <a href="test-api.html">API тесты</a>
+    </div>
+    
+    <div class="content-box">
+      <h2>Добро пожаловать на тестовый сайт!</h2>
+      <p>Этот сайт предназначен для тестирования различных функций веб-сервера:</p>
+      <ul>
+        <li><strong>GET</strong> - просмотр страниц и изображений</li>
+        <li><strong>POST</strong> - загрузка файлов и отправка форм</li>
+        <li><strong>DELETE</strong> - удаление загруженных файлов</li>
+      </ul>
+      <p>Выберите нужный раздел из меню выше.</p>
+      
+      <div class="server-info">
+        <h3>Информация о сервере:</h3>
+        <p id="server-time">Текущее время на сервере: загрузка...</p>
+        <button id="refresh-time">Обновить время (GET-запрос)</button>
+      </div>
+    </div>
   </div>
-
+  
   <script>
-    const input = document.getElementById("fileInput");
-    const preview = document.getElementById("previewContainer");
-
-    input.addEventListener("change", function () {
-      preview.innerHTML = "";
-      const file = this.files[0];
-      if (file && file.type.startsWith("image/")) {
-        const img = document.createElement("img");
-        img.src = URL.createObjectURL(file);
-        img.classList.add("preview");
-        preview.appendChild(img);
-      }
+    document.getElementById('refresh-time').addEventListener('click', function() {
+      fetch('time.txt?' + new Date().getTime())
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById('server-time').textContent = 'Текущее время на сервере: ' + data;
+        })
+        .catch(error => {
+          console.error('Ошибка:', error);
+          document.getElementById('server-time').textContent = 'Ошибка получения времени';
+        });
     });
-
-    function validateForm() {
-      const file = input.files[0];
-      if (!file) {
-        alert("Выберите файл!");
-        return false;
-      }
-      const maxSizeMB = 5;
-      if (file.size > maxSizeMB * 1024 * 1024) {
-        alert("Файл слишком большой. Макс: 5MB.");
-        return false;
-      }
-      return true;
-    }
   </script>
-
 </body>
 </html>

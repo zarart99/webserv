@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Загрузка файлов - Тестовый сайт</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Загрузка файлов (POST-запросы)</h1>
+    
+    <div class="nav-menu">
+      <a href="index.html">Главная</a>
+      <a href="upload.html" class="active">Загрузка файлов (POST)</a>
+      <a href="gallery.html">Галерея (GET/DELETE)</a>
+      <a href="test-api.html">API тесты</a>
+    </div>
+    
+    <div class="content-box">
+      <h2>Загрузка изображений</h2>
+      
+      <form id="upload-form" method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="file">Выберите изображение:</label>
+          <input type="file" name="file" id="file" accept="image/*" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="filename">Имя файла (опционально):</label>
+          <input type="text" name="filename" id="filename">
+        </div>
+        
+        <div id="preview-container" class="preview-container"></div>
+        
+        <div class="form-group">
+          <button type="submit">Загрузить файл</button>
+        </div>
+      </form>
+      
+      <div id="result" class="result-message"></div>
+      
+      <hr>
+      
+      <h2>Отправка текстовых данных</h2>
+      
+      <form id="text-form" method="POST">
+        <div class="form-group">
+          <label for="name">Имя:</label>
+          <input type="text" name="name" id="name" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="message">Сообщение:</label>
+          <textarea name="message" id="message" rows="4" required></textarea>
+        </div>
+        
+        <div class="form-group">
+          <button type="submit">Отправить данные</button>
+        </div>
+      </form>
+      
+      <div id="text-result" class="result-message"></div>
+    </div>
+  </div>
+  
+  <script>
+    // Превью изображения
+    document.getElementById('file').addEventListener('change', function() {
+      const preview = document.getElementById('preview-container');
+      preview.innerHTML = '';
+      
+      if (this.files && this.files[0]) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(this.files[0]);
+        img.onload = function() {
+          URL.revokeObjectURL(this.src);
+        }
+        preview.appendChild(img);
+      }
+    });
+    
+    // Обработка формы загрузки файлов
+    document.getElementById('upload-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      
+      document.getElementById('result').textContent = 'Загрузка...';
+      
+      fetch('/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.text())
+      .then(data => {
+        document.getElementById('result').innerHTML = 'Файл успешно загружен!<br>Перейдите в <a href="gallery.html">Галерею</a> для просмотра.';
+      })
+      .catch(error => {
+        document.getElementById('result').textContent = 'Ошибка при загрузке: ' + error;
+      });
+    });
+    
+    // Обработка текстовой формы
+    document.getElementById('text-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      
+      document.getElementById('text-result').textContent = 'Отправка...';
+      
+      fetch('/submit', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.text())
+      .then(data => {
+        document.getElementById('text-result').textContent = 'Данные успешно отправлены!';
+      })
+      .catch(error => {
+        document.getElementById('text-result').textContent = 'Ошибка при отправке: ' + error;
+      });
+    });
+  </script>
+</body>
+</html>

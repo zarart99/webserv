@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>API тесты - Тестовый сайт</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Тестирование API методов</h1>
+    
+    <div class="nav-menu">
+      <a href="index.html">Главная</a>
+      <a href="upload.html">Загрузка файлов (POST)</a>
+      <a href="gallery.html">Галерея (GET/DELETE)</a>
+      <a href="test-api.html" class="active">API тесты</a>
+    </div>
+    
+    <div class="content-box">
+      <h2>Тестирование HTTP-методов</h2>
+      
+      <div class="api-tester">
+        <div class="form-group">
+          <label for="request-url">URL:</label>
+          <input type="text" id="request-url" value="/api/test">
+        </div>
+        
+        <div class="form-group">
+          <label for="request-method">Метод:</label>
+          <select id="request-method">
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+            <option value="HEAD">HEAD</option>
+            <option value="OPTIONS">OPTIONS</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="request-headers">Заголовки (JSON):</label>
+          <textarea id="request-headers" rows="3">{"Content-Type": "application/json"}</textarea>
+        </div>
+        
+        <div class="form-group">
+          <label for="request-body">Тело запроса (для POST, PUT):</label>
+          <textarea id="request-body" rows="5">{"key": "value"}</textarea>
+        </div>
+        
+        <div class="form-group">
+          <button id="send-request">Отправить запрос</button>
+        </div>
+        
+        <div class="response-container">
+          <h3>Ответ сервера:</h3>
+          <div class="response-details">
+            <div class="response-status" id="response-status">-</div>
+            <div class="response-time" id="response-time">-</div>
+          </div>
+          <div class="form-group">
+            <label for="response-headers">Заголовки ответа:</label>
+            <textarea id="response-headers" rows="5" readonly></textarea>
+          </div>
+          <div class="form-group">
+            <label for="response-body">Тело ответа:</label>
+            <textarea id="response-body" rows="10" readonly></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    document.getElementById('send-request').addEventListener('click', function() {
+      const url = document.getElementById('request-url').value;
+      const method = document.getElementById('request-method').value;
+      
+      let headers = {};
+      try {
+        headers = JSON.parse(document.getElementById('request-headers').value);
+      } catch (e) {
+        alert('Ошибка в формате заголовков JSON');
+        return;
+      }
+      
+      const body = document.getElementById('request-body').value;
+      let bodyContent = null;
+      
+      if (method === 'POST' || method === 'PUT') {
+        if (headers['Content-Type'] === 'application/json') {
+          try {
+            bodyContent = JSON.parse(body);
+          } catch (e) {
+            alert('Ошибка в формате тела запроса JSON');
+            return;
+          }
+        } else {
+          bodyContent = body;
+        }
+      }
+      
+      // Очищаем предыдущий ответ
+      document.getElementById('response-status').textContent = 'Отправка запроса...';
+      document.getElementById('response-time').textContent = '';
+      document.getElementById('response-headers').value = '';
+      document.getElementById('response-body').value = '';
+      
+      const startTime = new Date().getTime();
+      
+      fetch(url, {
+        method: method,
+        headers: headers,
+        body: ['POST', 'PUT'].includes(method) ? JSON.stringify(bodyContent) : null
+      })
+      .then(response => {
+        const endTime = new Date().getTime();
+        const responseTime = endTime - startTime;
+        
+        document.getElementById('response-status').textContent = `${response.status} ${response.statusText}`;
+        document.getElementById('response-time').textContent = `${responseTime} мс`;
+        
+        // Преобразуем заголовки в текст
+        let headersText = '';
+        response.headers.forEach((value, name) => {
+          headersText += `${name}: ${value}\n`;
+        });
+        document.getElementById('response-headers').value = headersText;
+        
+        return response.text();
+      })
+      .then(data => {
+        document.getElementById('response-body').value = data;
+      })
+      .catch(error => {
+        document.getElementById('response-status').textContent = 'Ошибка';
+        document.getElementById('response-body').value = error.toString();
+      });
+    });
+  </script>
+</body>
+</html>

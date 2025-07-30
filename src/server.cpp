@@ -314,6 +314,7 @@ void Server::processRequest(int fd)
     catch (const std::exception &e) {
         std::cerr << "Handle request error: " << e.what() << std::endl;
         clients[fd]->clearReadBuffer();
+        clients[fd]->markAsFinished();
     }
 }
 

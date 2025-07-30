@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Галерея - Тестовый сайт</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Галерея изображений (GET/DELETE)</h1>
+    
+    <div class="nav-menu">
+      <a href="index.html">Главная</a>
+      <a href="upload.html">Загрузка файлов (POST)</a>
+      <a href="gallery.html" class="active">Галерея (GET/DELETE)</a>
+      <a href="test-api.html">API тесты</a>
+    </div>
+    
+    <div class="content-box">
+      <h2>Просмотр и управление файлами</h2>
+      
+      <div class="gallery-controls">
+        <button id="refresh-gallery">Обновить галерею</button>
+      </div>
+      
+      <div id="gallery" class="gallery-container">
+        <!-- Здесь будут отображаться изображения -->
+        <div class="loading">Загрузка изображений...</div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Функция загрузки списка файлов
+    function loadGallery() {
+      const gallery = document.getElementById('gallery');
+      gallery.innerHTML = '<div class="loading">Загрузка изображений...</div>';
+      
+      fetch('/uploads/')
+        .then(response => response.text())
+        .then(html => {
+          // Если сервер поддерживает автоиндексацию, можно парсить HTML
+          // В реальном проекте лучше использовать JSON API
+          
+          // Имитация ответа от сервера для тестирования
+          const files = [
+            { name: 'example1.jpg', path: '/uploads/example1.jpg' },
+            { name: 'example2.png', path: '/uploads/example2.png' },
+            { name: 'example3.gif', path: '/uploads/example3.gif' }
+          ];
+          
+          if (files.length === 0) {
+            gallery.innerHTML = '<div class="no-files">Нет загруженных изображений</div>';
+            return;
+          }
+          
+          gallery.innerHTML = '';
+          
+          files.forEach(file => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            
+            // Для изображений
+            if (/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name)) {
+              item.innerHTML = `
+                <div class="image-container">
+                  <img src="${file.path}" alt="${file.name}">
+                </div>
+                <div class="file-info">
+                  <span class="file-name">${file.name}</span>
+                  <div class="file-actions">
+                    <a href="${file.path}" target="_blank" class="view-btn">Просмотр</a>
+                    <button class="delete-btn" data-file="${file.path}">Удалить</button>
+                  </div>
+                </div>
+              `;
+            } else {
+              item.innerHTML = `
+                <div class="file-icon">📄</div>
+                <div class="file-info">
+                  <span class="file-name">${file.name}</span>
+                  <div class="file-actions">
+                    <a href="${file.path}" target="_blank" class="view-btn">Скачать</a>
+                    <button class="delete-btn" data-file="${file.path}">Удалить</button>
+                  </div>
+                </div>
+              `;
+            }
+            
+            gallery.appendChild(item);
+          });
+          
+          // Добавление обработчиков для кнопок удаления
+          document.querySelectorAll('.delete-btn').forEach(button => {
+            button.addEventListener('click', function() {
+              const filePath = this.getAttribute('data-file');
+              deleteFile(filePath, this.closest('.gallery-item'));
+            });
+          });
+        })
+        .catch(error => {
+          gallery.innerHTML = `<div class="error">Ошибка загрузки файлов: ${error}</div>`;
+        });
+    }
+    
+    // Функция удаления файла
+    function deleteFile(filePath, itemElement) {
+      if (confirm(`Вы уверены, что хотите удалить файл?`)) {
+        itemElement.classList.add('deleting');
+        
+        fetch(filePath, {
+          method: 'DELETE'
+        })
+        .then(response => {
+          if (response.ok) {
+            itemElement.remove();
+            if (document.querySelectorAll('.gallery-item').length === 0) {
+              document.getElementById('gallery').innerHTML = '<div class="no-files">Нет загруженных изображений</div>';
+            }
+          } else {
+            throw new Error(`Ошибка удаления: ${response.status}`);
+          }
+        })
+        .catch(error => {
+          itemElement.classList.remove('deleting');
+          alert(`Не удалось удалить файл: ${error}`);
+        });
+      }
+    }
+    
+    // Загружаем галерею при загрузке страницы
+    document.addEventListener('DOMContentLoaded', loadGallery);
+    
+    // Обновление галереи по кнопке
+    document.getElementById('refresh-gallery').addEventListener('click', loadGallery);
+  </script>
+</body>
+</html>

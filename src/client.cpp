@@ -28,11 +28,11 @@ void Client::handleRead()
     }
     else if (n == 0)
     {
-        finished = true;
+        markAsFinished();
     }
     else if (n < 0)
     {
-        finished = true;
+        markAsFinished();
         std::cerr << "Read error on fd " << fd << std::endl;
     }
 }
@@ -47,7 +47,7 @@ void Client::handleWrite()
         writeBuffer.erase(0, n);
         if (writeBuffer.empty()) {
             std::cout << "Response sent and connection closing (fd=" << fd << ")\n";
-            finished = true;
+            markAsFinished();
         }
     } 
     else if (n == 0) {
@@ -55,7 +55,7 @@ void Client::handleWrite()
     }
     else if (n < 0) {
         std::cerr << "Write error on fd " << fd << std::endl;
-        finished = true;
+        markAsFinished();
     }
 }
 
