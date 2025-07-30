@@ -9,7 +9,7 @@
 #include <map>
 #include <cctype>
 #include <stdexcept>
-
+#include <sys/stat.h>
 
 struct ListenStruct
 {
@@ -93,6 +93,10 @@ class ConfigParser
 		void defineDefaultListen(ServerConfig& serverData);
 		void defineDefaultMethods(LocationStruct& location);
 		void extractUniqueListen(void);
+
+		void validateGlobalConfig(void);
+		void validateServer(const ServerConfig& server, size_t serverIndex);
+		void validateLocation(const LocationStruct& location, const ServerConfig& server, size_t serverIndex, size_t locationIndex);
 };
 
 #endif
