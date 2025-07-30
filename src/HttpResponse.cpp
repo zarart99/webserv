@@ -32,6 +32,8 @@ std::map<int, std::string> HttpResponse::initStatusMessages()
     m[200] = "OK";
     m[201] = "Created";
     m[204] = "No Content";
+    m[301] = "Moved Permanently";
+    m[302] = "Found";
     m[400] = "Bad Request";
     m[404] = "Not Found";
     m[405] = "Method Not Allowed";
