@@ -24,22 +24,29 @@ public:
     ServerConfig* getConfig() const { return config; }   
     ~Client();
 
-    void handleRead();   // вызов при POLLIN
-    void handleWrite();  // вызов при POLLOUT
+    void handleRead();   // POLLIN
+    void handleWrite();  // POLLOUT
 
-    // Взаимодействие с HTTP-парсером (от участника 2)
-    std::string& getRequestBuffer();
+    // Request/Response buffer management
     std::string& getReadBuffer();
+    void clearReadBuffer() { readBuffer.clear(); }
     std::string& getWriteBuffer();
-    bool         isRequestReady();          // найден \r\n\r\n?
-    void         setResponse(const std::string&); // HTTP-ответ
-    bool         isDone();                   // можно удалять клиента
+    std::string& getRequestBuffer();
+    bool isRequestReady();          // Check if complete request received (\r\n\r\n)
+    void setResponse(const std::string&); // Set HTTP response
+
+    // Client state management
+    bool isDone();                  // Check if client can be removed
+    
+    // Client connection information
     std::string getClientIP() const { return clientIP; }
     int getClientPort() const { return clientPort; }
-    void setListenFd(int fd) { listen_fd = fd; }
-    int getListenFd() const { return listen_fd; }
     std::string getServerIP() const { return serverIP; }
     int getServerPort() const { return serverPort; }
+    
+    // Server configuration
+    int getListenFd() const { return listen_fd; }
+    void setListenFd(int fd) { listen_fd = fd; }
     void updateConfig(ServerConfig* newConfig) { config = newConfig; }
 };
 
