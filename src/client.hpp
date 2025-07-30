@@ -48,6 +48,7 @@ public:
     int getListenFd() const { return listen_fd; }
     void setListenFd(int fd) { listen_fd = fd; }
     void updateConfig(ServerConfig* newConfig) { config = newConfig; }
+    void markAsFinished() { finished = true; }
 };
 
 #endif

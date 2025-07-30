@@ -6,15 +6,26 @@ server {
     listen 127.0.0.1:8080;
     server_name localhost;
     
-    root /Users/asegerasimov/Documents/study_repo/web_serv/www/html;
+    root /www/html;
     
-    index index.html index.htm index.php;
+    index index.html index.php;
     
     # Настройка для загрузки файлов
+    location / {
+        root /www/html;
+		index index.html index.htm;
+		autoindex on;
+        error_page 401 /error/401.html;
+		error_page 405 /error/405.html;
+		error_page 500 /error/500.html;
+		error_page 501 /error/501.html;
+		error_page 505 /error/505.html;
+        upload_path /www/html/uploads;
+    }
+
     location /uploads/ {
-        autoindex on;
-        client_max_body_size 5M;
-        allowed_methods GET POST DELETE;
+    autoindex on;
+    allow_methods GET POST DELETE;
     }
     
     # Страницы ошибок
@@ -32,15 +43,16 @@ server {
     listen 127.0.0.1:8080;
     server_name api.localhost;
     
-    root /Users/asegerasimov/Documents/study_repo/web_serv/www/html/upi;
+    root /www/html/upi;
     index index.html index.htm index.php;
     
     location / {
-        allowed_methods GET POST;
+        allow_methods GET POST;
     }
     
     location /api/ {
-        allowed_methods GET POST PUT DELETE;
+        root /www/html/upi;
+        allow_methods GET POST DELETE;
     }
     
     location /redirect/ {
@@ -53,14 +65,13 @@ server {
     listen 127.0.0.1:8081;
     server_name upload.localhost;
     
-    root /Users/asegerasimov/Documents/study_repo/web_serv/www/html/uploads;
+    root /www/html/uploads;
     index index.php upload.html;
     
     client_max_body_size 20M;
     
     location / {
-        allowed_methods GET POST DELETE;
+        allow_methods GET POST DELETE;
         autoindex on;
     }
-    
 }
