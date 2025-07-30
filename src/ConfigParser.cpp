@@ -75,6 +75,8 @@ void trimSemicolon(std::string& str)
 {
 	if (!str.empty() && str[str.size() - 1] == ';')
 		str.erase(str.size() - 1);
+	else
+		throw std::runtime_error("Invalid syntax in directiv!");
 }
 
 void ConfigParser::parseConfigFile(std::string const & fileName )
@@ -130,6 +132,7 @@ void ConfigParser::parseConfigFile(std::string const & fileName )
 	if (!validateGlobalUniqueListen())
 		throw std::runtime_error("Error: Conflicting listen between servers!");
 	extractUniqueListen();
+	validateGlobalConfig();
 }
 
 ServerConfig ConfigParser::parseServer(std::vector<std::string>& strs)
@@ -374,6 +377,9 @@ std::vector<std::string> ConfigParser::findIndex(std::string& str)
 		throw std::runtime_error("Invalid index directiv!");
 	for (size_t i = 1; i < strs.size(); i++)
 	{
+		size_t pos = strs[i].find('.');
+		if (pos == std::string::npos)
+			throw std::runtime_error("Invalid index directiv!");
 		index.push_back(strs[i]);
 	}
 	return index;
@@ -755,7 +761,7 @@ void ConfigParser::defineDefaultListen(ServerConfig& serverData)//Функция
 {
 	ListenStruct temp;
 	temp.ip = "0.0.0.0";//Все IP
-	temp.port = 80;//port hppt
+	temp.port = 8080;//port hppt
 	serverData.listen.push_back(temp);
 }
 
@@ -778,4 +784,119 @@ bool ConfigParser::validateServerName(std::string& name)//Проверяет и�
 			return false;
 	}
 	return true;
+}
+std::string to_string_98_conf(int val)
+{
+    std::ostringstream str;
+    str << val;
+    return str.str();
+}
+
+void ConfigParser::validateGlobalConfig(void)
+{
+	if (_configServ.empty())
+		throw std::runtime_error("Error: Dont find server!");
+	for (size_t i = 0; i < _configServ.size(); i++)
+	{
+		validateServer(_configServ[i], i);
+	}
+}
+void ConfigParser::validateServer(const ServerConfig& server, size_t serverIndex)
+{
+	std::string serverError = "Error in server[" + to_string_98_conf(serverIndex) + "]";
+
+	if (server.listen.empty())
+		throw std::runtime_error(serverError + ": Dont find listen directive in server!");
+
+	if (server.location.empty())
+	{
+		throw std::runtime_error(serverError + ": Server without location blocks!");//Пока что так
+		// if (server.rootDef.empty())
+		// 	throw std::runtime_error(serverError + ": Server without location blocks and default root directive!");
+		
+		// if (server.indexDef.empty())
+		// 	throw std::runtime_error(serverError + ": Server without location blocks and default index directive!");
+	}
+	else
+	{
+		for (size_t i = 0; i < server.location.size(); i++)
+		{
+			validateLocation( server.location[i], server, serverIndex, i);
+		}
+
+	}
+
+	if (!server.rootDef.empty())
+	{
+		
+		char cwd[1000];
+    	getcwd(cwd, sizeof(cwd));
+		std::string root_abs = std::string(cwd) + server.rootDef;
+		struct stat statBuf;
+		if (stat(root_abs.c_str(), &statBuf) != 0 || !S_ISDIR(statBuf.st_mode))
+			throw std::runtime_error(serverError + ": Default root directory doest not exist!");
+	}
+}
+
+void ConfigParser::validateLocation(const LocationStruct& location, const ServerConfig& server, size_t serverIndex, size_t locationIndex)
+{
+	std::string locationError = "Error in server[" + to_string_98_conf(serverIndex) + "] location[" + to_string_98_conf(locationIndex) + "] ( " + location.prefix + ")";
+	
+	if (location.prefix.empty())
+		throw std::runtime_error(locationError + ": Location prefix empty!");
+	
+	bool hasRoot = !location.root.empty();
+	bool hasReturn = !location.redir.empty();
+	bool hasDefRoot = !server.rootDef.empty();
+
+	if (!hasRoot && !hasReturn && !hasDefRoot)
+		throw std::runtime_error(locationError + ": Location most have root or redir or server root default!");
+	
+	if (hasRoot)
+	{
+		char cwd[1000];
+    	getcwd(cwd, sizeof(cwd));
+		std::string root_abs = std::string(cwd) + location.root;
+		struct stat statBuf;
+		if (stat(root_abs.c_str(), &statBuf) != 0 || !S_ISDIR(statBuf.st_mode))
+			throw std::runtime_error(locationError + ": Root directory does not exist!");
+	}
+	if (!location.upload_path.empty())
+	{
+		if (location.upload_path[0] != '/')
+			throw std::runtime_error(locationError + ": invalid path in upload_path!");
+		char cwd[1000];
+    	getcwd(cwd, sizeof(cwd));
+		std::string root_abs = std::string(cwd) + location.upload_path;
+		struct stat statBuf;
+		if (stat(root_abs.c_str(), &statBuf) != 0 || !S_ISDIR(statBuf.st_mode))
+	 		throw std::runtime_error(locationError + ": upload_path does not exist!");
+	}
+	if (hasReturn)
+	{
+		for (std::map<int, std::string>::const_iterator it = location.redir.begin(); it != location.redir.end(); it++)
+		{
+			if ((it->first >= 300 && it->first < 400) && it->second.empty())
+				throw std::runtime_error(locationError + ": Redirect code requires a URL!");
+		}
+	}
+
+	if (!location.error_page.empty())
+	{
+		for (std::map<int, std::string>::const_iterator it = location.error_page.begin(); it != location.error_page.end(); it++)
+		{
+			if (it->second.empty())	
+				throw std::runtime_error(locationError + ": invalide error_page!");
+		}
+	}
+
+	if (!location.cgi.empty())
+	{
+		for (size_t i_2 = 0; i_2 < location.cgi.size(); i_2++)
+		{
+			if (location.cgi[i_2].extension.empty() || location.cgi[i_2].pathInterpreter.empty())
+				throw std::runtime_error(locationError + ": invalide cgi config!");
+		}
+	}
+	
 }

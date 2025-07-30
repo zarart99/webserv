@@ -604,7 +604,6 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
     HttpResponse response;
     response.setStatusCode(statusCode);
     response.addHeader("Content-Type", "text/html; charset=utf-8");
-
     // Для 405 – заголовок Allow
     if (statusCode == 405 && allowed_methods && !allowed_methods->empty())
     {
@@ -652,7 +651,7 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
         {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)))
-                root = std::string(cwd) + root;
+                fullPath = std::string(cwd) + root;
         }
         std::string fullPath = root + pagePath; // <-- теперь это "<cwd>/www/html/error/404.html"
 
@@ -665,7 +664,6 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
             return response;
         }
     }
-
     // 4) Генерим простую HTML-страницу, беря текст из HttpResponse::getStatusMessages()
     const std::map<int, std::string> &statusMsgs = HttpResponse::getStatusMessages();
     std::map<int, std::string>::const_iterator itStatus =

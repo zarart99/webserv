@@ -1,54 +1,48 @@
 server {
 	listen 127.0.0.1:8001;
-	server_name localhost;
+	server_name localhost my_new_site;
 	error_page 404 /error/404.html;
 
 
 	location / {
         root /www/html;
+		allow_methods GET POST DELETE;
 		index index.html index.htm;
-		allow_methods GET;
 		autoindex off;
+		error_page 413 /error/413.html;
         error_page 401 /error/401.html;
 		error_page 405 /error/405.html;
 		error_page 500 /error/500.html;
 		error_page 501 /error/501.html;
 		error_page 505 /error/505.html;
+		client_max_body_size 1000;
     }
 
 	location /api {
-    	root /www/html/api;
+    	root /www/html/upi;
+		index index.html index.htm;
+		autoindex off;
 		allow_methods GET POST;
+		error_page 404 /error/404.html;
 		client_max_body_size 1M;
-		cgi .php /usr/bin/php-cgi 40;
     }
 
 	location /uploads {
 		root /www/html/uploads;
 		allow_methods GET POST;
-		autoindex on;
-		index index.php;
-		upload_path yyy;
-		client_max_body_size 10M;
-		error_page 404 /errors/404.html;
-		cgi .php /usr/bin/php-cgi 40;
-		cgi .py /usr/bin/python3;
-    }
-
-	location /redirect_to_error {
-		root /www/html;
-		return 405;
 		error_page 405 /error/405.html;
-
-	}
-	
-	location /old-page {
-		return 302 https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTkSlSYTkwa_n-97GNYtglLb9lO6B-adBchUQ&s;
-	}
+		error_page 413 /error/413.html;
+		error_page 500 /error/500.html;
+		autoindex off;
+		index index.php;
+		upload_path /www/html/uploads/yyy;
+		client_max_body_size 10M;
+		cgi .php /usr/bin/php-cgi 40;
+    }
 }
 
 server {
-	listen 0.0.0.0:8006;
+	listen 127.0.0.1:8080;
 	server_name mysite;
 	error_page 404 /errors/404.html;
 	
@@ -60,7 +54,6 @@ server {
 
 	location /uploads/ {
         root /www/html/uploads;
-        index index.html index.htm;
 		autoindex on;
 		allow_methods GET POST DELETE;
     }

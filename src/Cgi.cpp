@@ -112,7 +112,8 @@ bool Cgi::isCgi(void)
                         _exec_args.data_cgi.extension = _data_rec.ext;//Расширение
                         _exec_args.data_cgi.pathInterpreter = _location->cgi[i].pathInterpreter;//Путь к интерпретатору
                         _exec_args.data_cgi.timeout = _location->cgi[i].timeout;//timeout
-
+                        if (_data_rec.ext != ".php")
+                            return false;
                         return true;
                     }
                 }
@@ -124,7 +125,8 @@ bool Cgi::isCgi(void)
     findQuery();//Отделяем query от url и сохраняем 
     findPathInfo();//Отделяем path_info от url и сохраняем .Сохраняем расширение.
 
-
+    if (_data_rec.ext != ".php")
+        return false;
     for (size_t i = 0; i < _location->cgi.size(); i++)//Проходим по всем директивам cgi в location
     {
         if (_location->cgi[i].extension == _data_rec.ext)//Если расширение директивы cgi совпадает с расширением url то все ок запускаем cgi
@@ -275,22 +277,26 @@ void Cgi::createCgiEnvp(void)
             _exec_args.envs_strings.push_back("CONTENT_TYPE=" + content_type);
         }
 
-        if (!_location->upload_path.empty() && _location->upload_path != _location->root)
+        if (_data_rec.req.getMethod() == "POST")
         {
-            std::string path;
-            if (_location->upload_path[0] == '/')
-                path = _location->upload_path; //У нас изначально абсолютный путь
+            std::string upload_dir;
+            if (!_location->upload_path.empty())
+                upload_dir = _location->upload_path;
+            else if (!_location->root.empty())
+                upload_dir = _location->root;
             else
+                upload_dir = _server->rootDef;
             {
-                std::string dir = _exec_args.path_absolut.substr(0, _exec_args.path_absolut.find_last_of('/'));//Если относительный пусть , то берем путь до текущего каталога
-                path = dir + "/" + _location->upload_path;//Совмещаем с относительным
+                char cwd[1000];
+                if (getcwd(cwd, sizeof(cwd)))
+                    upload_dir = std::string(cwd) + upload_dir;
             }
-            path = checkPath(path);
-            _exec_args.envs_strings.push_back("UPLOAD_PATH=" + path);
+            upload_dir = checkPath(upload_dir);
+            _exec_args.envs_strings.push_back("UPLOAD_PATH=" + upload_dir);
         }
     }
     else
-        throw std::runtime_error("Error: 405 Method Not Allowed");
+        throw std::runtime_error("405 Method Not Allowed");
         
     _exec_args.envs_ptrs.clear();
     for (size_t i = 0; i < _exec_args.envs_strings.size(); i++)
@@ -482,38 +488,21 @@ std::string Cgi::executeScript(void)
 
 std::string Cgi::composeErrorResponse(const std::string& error)
 {
-    std::string status_error;
-    std::string body_error;
-    if (error.find("404") != std::string::npos)
-    {
-        status_error = "404 Not Found";
-        body_error = "<h1>404 Not Found</h1>";
-    }
-    else if (error.find("413") != std::string::npos)
-    {
-        status_error = "413 Payload Too Large";
-        body_error = "<h1>413 Payload Too Large</h1>";
-    }
-    else if (error.find("403") != std::string::npos)
-    {
-        status_error = "403 Forbidden";
-        body_error = "<h1>403 Forbidden</h1>";
-    }   
-    else if (error.find("405") != std::string::npos)
-    {
-        status_error = "405 Method Not Allowed";
-        body_error = "<h1>405 Method Not Allowed</h1>";
-    }
-    else
-    {
-        status_error = "500 Internal Server Error";
-        body_error = "<h1>500 Internal Server Error</h1>";
-    }
-    std::string response_error = "HTTP/1.1 " + status_error + "\r\n"
-                                + "Content-Type: text/html\r\n"
-                                + "Content-Length: " + to_string_98(body_error.length())
-                                + "\r\n\r\n" + body_error; 
-    return response_error;
+    int statusCode = 500; //Default code
+
+    std::istringstream iss(error);
+    std::string codeError;
+    iss >> codeError;
+
+    std::istringstream temp(codeError);
+    int code;
+    if (temp >> code && code >= 100 && code < 600)
+        statusCode = code;
+
+    HttpResponse response_error = _createErrorResponse(statusCode, _server, &_location->allow_methods , _location);
+    
+    
+    return response_error.buildResponse();
 }
 
 std::string Cgi::cgiHandler(void)
