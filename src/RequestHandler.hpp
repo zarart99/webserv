@@ -37,8 +37,11 @@ protected:
     HttpResponse _handleSimplePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
     HttpResponse _handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
     std::string saveBodyToFile(const std::string &body, const std::string &suggestedName,
-                               const LocationStruct &location, const ServerConfig &server);
+                               const std::string &storageDir);
     HttpResponse _handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
+
+    // Returns the absolute directory to use for file uploads or an empty string on error
+    std::string _getStorageDir(const LocationStruct &location, const ServerConfig &server) const;
 };
 
 #endif

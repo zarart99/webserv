@@ -146,6 +146,28 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
             return _createErrorResponse(404, server_config, NULL);
         }
 
+        // После поиска подходящего location — проверяем, нужно ли делать редирект
+        if (!location_config->redir.empty())
+        {
+            std::map<int, std::string>::const_iterator it = location_config->redir.begin();
+            int code = it->first;                // код редиректа или ошибки
+            const std::string &url = it->second; // URL или пустая строка
+
+            if (!url.empty())
+            {
+                // Это редирект на полный URL
+                HttpResponse res;
+                res.setStatusCode(code);        // 301, 302 и т.д.
+                res.addHeader("Location", url); // браузер перейдёт по этой ссылке
+                return res;
+            }
+            else if (code >= 400 && code < 600)
+            {
+                // Только код ошибки → рисуем страницу через общий генератор
+                return _createErrorResponse(code, server_config, NULL, location_config);
+            }
+        }
+
         // Проверяем, 413
 
         size_t limit_in_bytes = location_config->client_max_body_size;
@@ -314,23 +336,29 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     return _handleSimplePost(request, location, server);
 }
 
+std::string RequestHandler::_getStorageDir(const LocationStruct &location, const ServerConfig &server) const
+{
+    std::string dir;
+    if (!location.upload_path.empty())
+        dir = location.upload_path;
+    else if (!location.root.empty())
+        dir = location.root;
+    else
+        dir = server.rootDef;
+
+    if (dir.empty())
+        return "";
+
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)))
+        return std::string(cwd) + dir;
+    return "";
+}
+
 HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    std::string upload_dir;
-    if (!location.upload_path.empty())
-        upload_dir = location.upload_path;
-    else if (!location.root.empty())
-        upload_dir = location.root;
-    else
-        upload_dir = server.rootDef;
-
-    {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)))
-            upload_dir = std::string(cwd) + upload_dir;
-    }
-
-    if (upload_dir.empty())
+    std::string storageDir = _getStorageDir(location, server);
+    if (storageDir.empty())
         return _createErrorResponse(500, &server, NULL, &location);
 
     std::string prefix = location.prefix;
@@ -343,7 +371,7 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
     if (!rel.empty() && rel[0] == '/')
         rel.erase(0, 1);
 
-    std::string filename = saveBodyToFile(request.getBody(), rel, location, server);
+    std::string filename = saveBodyToFile(request.getBody(), rel, storageDir);
     if (filename.empty())
         return _createErrorResponse(500, &server, NULL, &location);
 
@@ -355,6 +383,9 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
 
 HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
+    std::string storageDir = _getStorageDir(location, server);
+    if (storageDir.empty())
+        return _createErrorResponse(500, &server, NULL, &location);
     std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
     if (it == request.getHeaders().end())
         return _createErrorResponse(400, &server, NULL, &location); // Если нет content-type, возвращаем 400 Bad Request
@@ -400,7 +431,7 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
     {
         if (!parts[i].filename.empty()) // Часть с filename — значит, это файл. Сохраняем его.
         {
-            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, location, server);
+            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, storageDir);
             if (fname.empty())
                 return _createErrorResponse(500, &server, NULL, &location); // Ошибка сохранения файла
             std::string prefix = location.prefix;                           // Формируем URL доступа (удаляем хвостовой '/')
@@ -446,20 +477,9 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
 }
 
 std::string RequestHandler::saveBodyToFile(const std::string &body, const std::string &suggestedName,
-                                           const LocationStruct &location, const ServerConfig &server)
+                                           const std::string &storageDir)
 {
-    std::string dir;
-    if (!location.upload_path.empty())
-        dir = location.upload_path;
-    else if (!location.root.empty())
-        dir = location.root;
-    else
-        dir = server.rootDef;
-    {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)))
-            dir = std::string(cwd) + dir;
-    }
+    std::string dir = storageDir;
     if (dir.empty())
         return "";
 
@@ -538,19 +558,9 @@ std::string RequestHandler::saveBodyToFile(const std::string &body, const std::s
 
 HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    // 1) Выбираем, в какую папку удалять — upload_path → root → server.rootDef
-    std::string upload_dir = !location.upload_path.empty()
-                                 ? location.upload_path
-                                 : (!location.root.empty()
-                                        ? location.root
-                                        : server.rootDef);
-
-    // приводим к абсолютному, если путь относительный
-    {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)))
-            upload_dir = std::string(cwd) + upload_dir;
-    }
+    std::string storageDir = _getStorageDir(location, server);
+    if (storageDir.empty())
+        return _createErrorResponse(500, &server, NULL, &location);
     // 2) Обрезаем префикс локации, чтобы не дублировать /uploads
     std::string prefix = location.prefix;
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
@@ -562,7 +572,7 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
         rel.erase(0, 1); // → "test.png"
 
     // 3) Собираем настоящий полный путь
-    std::string path = upload_dir;
+    std::string path = storageDir;
     if (!path.empty() && path[path.size() - 1] != '/')
         path += "/";
     path += rel; // "/www/html/uploads/test.png"
@@ -631,27 +641,23 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
     }
 
     // 3) Если есть путь к HTML — пробуем его отдать
-    if (!pagePath.empty()) {
+    if (!pagePath.empty())
+    {
         // собираем тот же root, что и в GET
         std::string root = (location && !location->root.empty())
                                ? location->root
                                : server->rootDef;
-        if (location->prefix != "/")//УДаляем название каталога location иначе путь составляется не правильно
+        if (!root.empty())
         {
-            size_t pos = root.find(location->prefix);
-            root = root.substr(0, pos);
-        }
-        root = root + pagePath;
-        std::string fullPath;
-        if (!root.empty()) {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)))
                 fullPath = std::string(cwd) + root;
         }
+        std::string fullPath = root + pagePath; // <-- теперь это "<cwd>/www/html/error/404.html"
 
-          // <-- теперь это "<cwd>/www/html/error/404.html"
         std::ifstream file(fullPath.c_str());
-        if (file.is_open()) {
+        if (file.is_open())
+        {
             std::string body((std::istreambuf_iterator<char>(file)),
                              std::istreambuf_iterator<char>());
             response.setBody(body);
@@ -679,7 +685,7 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
     return response;
 }
 
-const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string& ip, const std::string &host) const
+const ServerConfig *RequestHandler::_findServerConfig(int port, const std::string &ip, const std::string &host) const
 {
     if (!_config)
         return NULL;
@@ -691,18 +697,18 @@ const ServerConfig *RequestHandler::_findServerConfig(int port, const std::strin
     {
         for (size_t i = 0; i < it->listen.size(); i++)
         {
-            if (it->listen[i].port == port)//Сначала сравниваем по port
+            if (it->listen[i].port == port) // Сначала сравниваем по port
             {
-                if (it->listen[i].ip == ip || it->listen[i].ip == "0.0.0.0")//Если Ip одинаковые либо в листен прописан 0.0.0.0 то все ок идем дальше
+                if (it->listen[i].ip == ip || it->listen[i].ip == "0.0.0.0") // Если Ip одинаковые либо в листен прописан 0.0.0.0 то все ок идем дальше
                 {
-                    for (size_t i_2 = 0; i_2 < it->server_name.size(); i_2++)//Ищем похожиее имя домена
+                    for (size_t i_2 = 0; i_2 < it->server_name.size(); i_2++) // Ищем похожиее имя домена
                     {
-                        if (it->server_name[i_2] == host)//Если находим то это наш сервер
+                        if (it->server_name[i_2] == host) // Если находим то это наш сервер
                             return &(*it);
                     }
                     if (!isDefault)
                     {
-                        default_server_for_port = &(*it);//Первый сервер с совпадением по IP/PORT становиться дефолтным, отправляем его если нет совпадений по имени домена
+                        default_server_for_port = &(*it); // Первый сервер с совпадением по IP/PORT становиться дефолтным, отправляем его если нет совпадений по имени домена
                         isDefault = true;
                     }
                     break;
