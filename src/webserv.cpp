@@ -23,6 +23,7 @@ int main(int argc, char **argv)
 
         /* 2. создаём сервер, передавая ЕМУ ссылку на парсер */
         Server server(parser);
+//        parser.printConfig();//Вывод конфига , для дебагга
 
         std::cout << "Webserv started. Listening …\n";
         server.run(); // never returns пока не Ctrl-C

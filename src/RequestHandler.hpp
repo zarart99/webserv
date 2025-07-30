@@ -27,8 +27,9 @@ public:
 protected:
     const ServerConfig* _findServerConfig(int port, const std::string& ip, const std::string& host) const;
     const LocationStruct* _findLocationFor(const ServerConfig& server, const std::string& uri) const;
+    HttpResponse _createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods, const LocationStruct *location = NULL);
 
-private:
+    private:
     const ConfigParser* _config;
 
     HttpResponse _handleGet(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
@@ -38,8 +39,6 @@ private:
     std::string saveBodyToFile(const std::string &body, const std::string &suggestedName,
                                const LocationStruct &location, const ServerConfig &server);
     HttpResponse _handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server);
-
-    HttpResponse _createErrorResponse(int statusCode, const ServerConfig *server, const std::vector<std::string> *allowed_methods, const LocationStruct *location = NULL);
 };
 
 #endif

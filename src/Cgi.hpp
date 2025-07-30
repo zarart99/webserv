@@ -15,6 +15,7 @@
 #include "ConfigParser.hpp"
 #include "RequestHandler.hpp"
 #include "HttpRequest.hpp"
+#include "HttpResponse.hpp"
 
 struct ExecveEnvp
 {

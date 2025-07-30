@@ -594,7 +594,6 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
     HttpResponse response;
     response.setStatusCode(statusCode);
     response.addHeader("Content-Type", "text/html; charset=utf-8");
-
     // Для 405 – заголовок Allow
     if (statusCode == 405 && allowed_methods && !allowed_methods->empty())
     {
@@ -637,13 +636,20 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
         std::string root = (location && !location->root.empty())
                                ? location->root
                                : server->rootDef;
+        if (location->prefix != "/")//УДаляем название каталога location иначе путь составляется не правильно
+        {
+            size_t pos = root.find(location->prefix);
+            root = root.substr(0, pos);
+        }
+        root = root + pagePath;
+        std::string fullPath;
         if (!root.empty()) {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)))
-                root = std::string(cwd) + root;
+                fullPath = std::string(cwd) + root;
         }
-        std::string fullPath = root + pagePath;  // <-- теперь это "<cwd>/www/html/error/404.html"
-    
+
+          // <-- теперь это "<cwd>/www/html/error/404.html"
         std::ifstream file(fullPath.c_str());
         if (file.is_open()) {
             std::string body((std::istreambuf_iterator<char>(file)),
@@ -652,7 +658,6 @@ HttpResponse RequestHandler::_createErrorResponse(int statusCode,
             return response;
         }
     }
-
     // 4) Генерим простую HTML-страницу, беря текст из HttpResponse::getStatusMessages()
     const std::map<int, std::string> &statusMsgs = HttpResponse::getStatusMessages();
     std::map<int, std::string>::const_iterator itStatus =

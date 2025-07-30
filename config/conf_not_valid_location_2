@@ -1,0 +1,6 @@
+server {
+	listen 127.0.0.1:8001;
+	server_name localhost;
+	error_page 404 /error/404.html;
+	root www/html;
+}

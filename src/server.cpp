@@ -296,7 +296,6 @@ void Server::processRequest(int fd)
         // Используем const_cast, поскольку updateConfig ожидает не-константный указатель
         // Это безопасно, так как мы не изменяем саму конфигурацию внутри Client
 //        clients[fd]->updateConfig(const_cast<ServerConfig*>(config));
-
     Cgi script(cfg, req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
     HttpResponse resp;
     if (script.isCgi())
@@ -307,7 +306,7 @@ void Server::processRequest(int fd)
     }
     else
     {
-        // Обрабатываем обычный запрос     
+        // Обрабатываем обычный запрос   
         RequestHandler handler(cfg);
         resp = handler.handleRequest(req, clients[fd]->getServerPort(), clients[fd]->getServerIP(), host);
         // Устанавливаем ответ
