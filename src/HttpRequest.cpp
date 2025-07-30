@@ -79,6 +79,7 @@ void HttpRequest::_parse(const std::string &raw_request)
 
 void HttpRequest::_parseRequestLine(std::stringstream &request_stream)
 {
+    static const size_t MAX_URI_LENGTH = 8192;
     std::string request_line;
     if (!std::getline(request_stream, request_line) || request_line.empty())
     {
@@ -96,6 +97,9 @@ void HttpRequest::_parseRequestLine(std::stringstream &request_stream)
     {
         throw std::runtime_error("400 Bad Request: Malformed request line. Expected 'METHOD URI VERSION'");
     }
+
+    if (rawUri.size() > MAX_URI_LENGTH)
+        throw std::runtime_error("414 URI Too Long");
 
     // Если клиент прислал абсолютный URI ("http://host[:port]/path"), обрезаем до "/path"
     if (rawUri.rfind("http://", 0) == 0 || rawUri.rfind("https://", 0) == 0)
