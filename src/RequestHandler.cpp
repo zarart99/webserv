@@ -336,23 +336,29 @@ HttpResponse RequestHandler::_handlePost(const HttpRequest &request, const Locat
     return _handleSimplePost(request, location, server);
 }
 
+std::string RequestHandler::_getStorageDir(const LocationStruct &location, const ServerConfig &server) const
+{
+    std::string dir;
+    if (!location.upload_path.empty())
+        dir = location.upload_path;
+    else if (!location.root.empty())
+        dir = location.root;
+    else
+        dir = server.rootDef;
+
+    if (dir.empty())
+        return "";
+
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)))
+        return std::string(cwd) + dir;
+    return "";
+}
+
 HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    std::string upload_dir;
-    if (!location.upload_path.empty())
-        upload_dir = location.upload_path;
-    else if (!location.root.empty())
-        upload_dir = location.root;
-    else
-        upload_dir = server.rootDef;
-
-    {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)))
-            upload_dir = std::string(cwd) + upload_dir;
-    }
-
-    if (upload_dir.empty())
+    std::string storageDir = _getStorageDir(location, server);
+    if (storageDir.empty())
         return _createErrorResponse(500, &server, NULL, &location);
 
     std::string prefix = location.prefix;
@@ -365,7 +371,7 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
     if (!rel.empty() && rel[0] == '/')
         rel.erase(0, 1);
 
-    std::string filename = saveBodyToFile(request.getBody(), rel, location, server);
+    std::string filename = saveBodyToFile(request.getBody(), rel, storageDir);
     if (filename.empty())
         return _createErrorResponse(500, &server, NULL, &location);
 
@@ -377,6 +383,9 @@ HttpResponse RequestHandler::_handleSimplePost(const HttpRequest &request, const
 
 HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
+    std::string storageDir = _getStorageDir(location, server);
+    if (storageDir.empty())
+        return _createErrorResponse(500, &server, NULL, &location);
     std::map<std::string, std::string>::const_iterator it = request.getHeaders().find("content-type");
     if (it == request.getHeaders().end())
         return _createErrorResponse(400, &server, NULL, &location); // Если нет content-type, возвращаем 400 Bad Request
@@ -422,7 +431,7 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
     {
         if (!parts[i].filename.empty()) // Часть с filename — значит, это файл. Сохраняем его.
         {
-            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, location, server);
+            std::string fname = saveBodyToFile(parts[i].body, parts[i].filename, storageDir);
             if (fname.empty())
                 return _createErrorResponse(500, &server, NULL, &location); // Ошибка сохранения файла
             std::string prefix = location.prefix;                           // Формируем URL доступа (удаляем хвостовой '/')
@@ -468,20 +477,9 @@ HttpResponse RequestHandler::_handleMultipart(const HttpRequest &request, const 
 }
 
 std::string RequestHandler::saveBodyToFile(const std::string &body, const std::string &suggestedName,
-                                           const LocationStruct &location, const ServerConfig &server)
+                                           const std::string &storageDir)
 {
-    std::string dir;
-    if (!location.upload_path.empty())
-        dir = location.upload_path;
-    else if (!location.root.empty())
-        dir = location.root;
-    else
-        dir = server.rootDef;
-    {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)))
-            dir = std::string(cwd) + dir;
-    }
+    std::string dir = storageDir;
     if (dir.empty())
         return "";
 
@@ -560,19 +558,9 @@ std::string RequestHandler::saveBodyToFile(const std::string &body, const std::s
 
 HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const LocationStruct &location, const ServerConfig &server)
 {
-    // 1) Выбираем, в какую папку удалять — upload_path → root → server.rootDef
-    std::string upload_dir = !location.upload_path.empty()
-                                 ? location.upload_path
-                                 : (!location.root.empty()
-                                        ? location.root
-                                        : server.rootDef);
-
-    // приводим к абсолютному, если путь относительный
-    {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)))
-            upload_dir = std::string(cwd) + upload_dir;
-    }
+    std::string storageDir = _getStorageDir(location, server);
+    if (storageDir.empty())
+        return _createErrorResponse(500, &server, NULL, &location);
     // 2) Обрезаем префикс локации, чтобы не дублировать /uploads
     std::string prefix = location.prefix;
     if (!prefix.empty() && prefix[prefix.size() - 1] == '/')
@@ -584,7 +572,7 @@ HttpResponse RequestHandler::_handleDelete(const HttpRequest &request, const Loc
         rel.erase(0, 1); // → "test.png"
 
     // 3) Собираем настоящий полный путь
-    std::string path = upload_dir;
+    std::string path = storageDir;
     if (!path.empty() && path[path.size() - 1] != '/')
         path += "/";
     path += rel; // "/www/html/uploads/test.png"
