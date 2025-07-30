@@ -61,6 +61,13 @@ HttpRequest::~HttpRequest() {}
 
 void HttpRequest::_parse(const std::string &raw_request)
 {
+    static const size_t MAX_HEADER_SIZE = 8192;
+    size_t header_end = raw_request.find("\r\n\r\n");
+    if (header_end == std::string::npos)
+        throw std::runtime_error("400 Bad Request");
+    if (header_end > MAX_HEADER_SIZE)
+        throw std::runtime_error("431 Request Header Fields Too Large");
+
     std::stringstream request_stream(raw_request);
 
     _parseRequestLine(request_stream);

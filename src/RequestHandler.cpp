@@ -127,6 +127,12 @@ HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serve
     const ServerConfig *server_config = NULL;
     const LocationStruct *location_config = NULL;
 
+    static const size_t MAX_URI_LENGTH = 8192;
+    if (request.getUri().size() > MAX_URI_LENGTH)
+    {
+        return _createErrorResponse(414, server_config, NULL, location_config);
+    }
+
     try
     {
         server_config = _findServerConfig(serverPort, serverIp, serverHost);
