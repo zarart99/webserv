@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Файловый менеджер</title>
+  <title>File Manager</title>
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
@@ -30,8 +30,18 @@
       margin-bottom: 2rem;
     }
 
-    input[type="file"] {
+    input[type="file"], input[type="text"], textarea {
       font-size: 1rem;
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+
+    textarea {
+      height: 100px;
+      resize: vertical;
     }
 
     button, input[type="submit"] {
@@ -42,17 +52,19 @@
       color: white;
       border-radius: 5px;
       cursor: pointer;
+      width: 100%;
     }
 
     button:hover {
       background-color: #0056b3;
     }
 
-    .file-list {
+    .file-list, .message-list {
       background: #fff;
       padding: 1rem;
       border-radius: 10px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
     }
 
     .file-entry {
@@ -99,31 +111,145 @@
     .delete-btn:hover {
       background-color: #bd2130;
     }
+
+    .message {
+      padding: 10px;
+      margin-bottom: 10px;
+      border-left: 4px solid #007bff;
+      background-color: #f8f9fa;
+    }
+
+    .message-name {
+      font-weight: bold;
+      color: #007bff;
+    }
+
+    .message-date {
+      font-size: 0.8em;
+      color: #777;
+    }
+
+    .tabs {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      padding: 10px 20px;
+      background: #eee;
+      border: none;
+      border-radius: 5px 5px 0 0;
+      cursor: pointer;
+      margin-right: 5px;
+    }
+
+    .tab.active {
+      background: #fff;
+      font-weight: bold;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .status {
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 4px;
+    }
+
+    .status-success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .status-error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
   </style>
 </head>
 <body>
 
-  <h1>Загрузка изображений</h1>
+  <h1>Web Server Testing</h1>
 
-  <form method="POST" action="/uploads" enctype="multipart/form-data" onsubmit="return validateForm()">
-    <input type="file" name="file" id="fileInput" accept="image/jpeg,image/jpg" required>
-    <input type="submit" value="Загрузить">
-    <div id="previewContainer"></div>
-  </form>
+  <div class="tabs">
+    <button class="tab active" onclick="openTab(event, 'upload-tab')">File Upload</button>
+    <button class="tab" onclick="openTab(event, 'messages-tab')">Send Messages</button>
+  </div>
 
-  <div class="file-list">
-    <h2>Загруженные JPG файлы</h2>
-    <button id="refreshBtn" onclick="loadImageFiles()">Обновить список</button>
-    <div id="fileContainer">
-      <div class="loading">Загрузка списка файлов...</div>
+  <div id="upload-tab" class="tab-content active">
+    <h2>Image Upload</h2>
+
+    <form id="upload-form" method="POST" action="/uploads" enctype="multipart/form-data">
+      <input type="file" name="file" id="fileInput" accept="image/jpeg,image/jpg,image/png,image/gif" required>
+      <div id="previewContainer"></div>
+      <input type="submit" value="Upload File">
+      <div id="upload-status" class="status"></div>
+    </form>
+
+    <div class="file-list">
+      <h2>Uploaded Files</h2>
+      <button id="refreshBtn" onclick="loadImageFiles()">Refresh List</button>
+      <div id="fileContainer">
+        <div class="loading">Loading file list...</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="messages-tab" class="tab-content">
+    <h2>Send Messages</h2>
+
+    <form id="message-form" method="POST" action="/submit">
+      <div>
+        <label for="name">Your Name:</label>
+        <input type="text" name="name" id="name" required>
+      </div>
+      
+      <div>
+        <label for="message">Message:</label>
+        <textarea name="message" id="message" required></textarea>
+      </div>
+      
+      <input type="submit" value="Send Message">
+      <div id="message-status" class="status"></div>
+    </form>
+
+    <div class="message-list">
+      <h2>Sent Messages</h2>
+      <button onclick="loadMessages()">Refresh Messages</button>
+      <div id="messagesContainer">
+        <div class="loading">Loading messages...</div>
+      </div>
     </div>
   </div>
 
   <script>
+    // Tab switching
+    function openTab(evt, tabName) {
+      const tabs = document.getElementsByClassName("tab");
+      for (let i = 0; i < tabs.length; i++) {
+        tabs[i].className = tabs[i].className.replace(" active", "");
+      }
+      
+      const tabContents = document.getElementsByClassName("tab-content");
+      for (let i = 0; i < tabContents.length; i++) {
+        tabContents[i].className = tabContents[i].className.replace(" active", "");
+      }
+      
+      document.getElementById(tabName).className += " active";
+      evt.currentTarget.className += " active";
+    }
+
+    // Preview selected file
     const input = document.getElementById("fileInput");
     const preview = document.getElementById("previewContainer");
-
-    // Предпросмотр выбранного файла
+    
     input.addEventListener("change", function () {
       preview.innerHTML = "";
       const file = this.files[0];
@@ -135,24 +261,125 @@
       }
     });
 
-    // Валидация формы перед отправкой
-    function validateForm() {
-      const file = input.files[0];
-      if (!file) {
-        alert("Пожалуйста, выберите файл!");
-        return false;
-      }
-      const maxSizeMB = 5;
-      if (file.size > maxSizeMB * 1024 * 1024) {
-        alert(`Файл слишком большой. Максимальный размер: ${maxSizeMB}MB.`);
-        return false;
-      }
-      return true;
+    // Submit form with file
+    document.getElementById("upload-form").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      const status = document.getElementById("upload-status");
+      
+      status.textContent = "Uploading...";
+      status.className = "status";
+      
+      fetch("/uploads", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(data => {
+        status.textContent = "File uploaded successfully!";
+        status.className = "status status-success";
+        loadImageFiles(); // Update file list
+      })
+      .catch(error => {
+        console.error("Error:", error);
+        status.textContent = "Error uploading: " + error.message;
+        status.className = "status status-error";
+      });
+    });
+
+    // Send message
+    document.getElementById("message-form").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      const status = document.getElementById("message-status");
+      
+      status.textContent = "Sending...";
+      status.className = "status";
+      
+      fetch("/submit", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(data => {
+        status.textContent = "Message sent successfully!";
+        status.className = "status status-success";
+        document.getElementById("message-form").reset();
+        loadMessages(); // Update message list
+      })
+      .catch(error => {
+        console.error("Error:", error);
+        status.textContent = "Error sending: " + error.message;
+        status.className = "status status-error";
+      });
+    });
+
+    // Load file list
+    function loadImageFiles() {
+      const fileContainer = document.getElementById("fileContainer");
+      fileContainer.innerHTML = '<div class="loading">Loading file list...</div>';
+      
+      fetch('/uploads/')
+        .then(response => response.text())
+        .then(html => {
+          // Try to find image links in the HTML response
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          
+          // Get all links
+          const links = Array.from(doc.querySelectorAll('a'));
+          
+          // Filter only images
+          const imageFiles = links
+            .map(link => link.getAttribute('href'))
+            .filter(href => href && /\.(jpg|jpeg|png|gif)$/i.test(href));
+          
+          if (imageFiles.length === 0) {
+            fileContainer.innerHTML = '<p>No image files found.</p>';
+            return;
+          }
+          
+          fileContainer.innerHTML = '';
+          imageFiles.forEach(fileName => {
+            if (fileName === '../' || fileName === './') return; // Skip navigation links
+            
+            const filePath = `/uploads/${fileName}`;
+            const fileDiv = document.createElement('div');
+            fileDiv.className = 'file-entry';
+            
+            fileDiv.innerHTML = `
+              <img src="${filePath}" alt="${fileName}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+SW1hZ2Ugbm90IGZvdW5kPC90ZXh0Pjwvc3ZnPg==';">
+              <div class="file-info">
+                <span>${fileName}</span>
+              </div>
+              <div class="file-actions">
+                <a href="${filePath}" target="_blank">View</a>
+                <button class="delete-btn" onclick="deleteFile('${filePath}', this)">Delete</button>
+              </div>
+            `;
+            
+            fileContainer.appendChild(fileDiv);
+          });
+        })
+        .catch(error => {
+          console.error('Error loading files:', error);
+          fileContainer.innerHTML = `<p>Error loading file list: ${error.message}</p>`;
+        });
     }
 
-    // Функция для удаления файла
+    // Function to delete a file
     function deleteFile(filePath, button) {
-      if (confirm('Вы уверены, что хотите удалить этот файл?')) {
+      if (confirm('Are you sure you want to delete this file?')) {
         fetch(filePath, {
           method: 'DELETE'
         })
@@ -161,75 +388,59 @@
             const fileEntry = button.closest('.file-entry');
             fileEntry.remove();
             if (document.querySelectorAll('.file-entry').length === 0) {
-              document.getElementById('fileContainer').innerHTML = '<p>JPG файлов не найдено.</p>';
+              document.getElementById('fileContainer').innerHTML = '<p>No files found.</p>';
             }
           } else {
-            alert('Ошибка при удалении файла');
+            throw new Error(`HTTP error! Status: ${response.status}`);
           }
         })
         .catch(error => {
-          console.error('Ошибка:', error);
-          alert('Ошибка при удалении файла');
+          console.error('Error:', error);
+          alert('Error deleting file: ' + error.message);
         });
       }
     }
 
-    // Загрузка списка JPG файлов из директории uploads
-    function loadImageFiles() {
-      const fileContainer = document.getElementById("fileContainer");
-      fileContainer.innerHTML = '<div class="loading">Загрузка списка файлов...</div>';
+    // Load messages
+    function loadMessages() {
+      const messagesContainer = document.getElementById("messagesContainer");
+      messagesContainer.innerHTML = '<div class="loading">Loading messages...</div>';
       
-      // Вместо парсинга HTML будем использовать жестко заданный список файлов для демонстрации
-      // В реальной ситуации вы можете заменить этот код на серверный скрипт или API
-      
-      // Искусственная задержка для имитации загрузки
+      // Here should be a request to API to get messages
+      // For now just showing examples
       setTimeout(() => {
-        // Создаем тестовый массив файлов
-        const testFiles = [
-          { name: 'sample1.jpg', path: '/uploads/sample1.jpg' },
-          { name: 'sample2.jpg', path: '/uploads/sample2.jpg' },
-          { name: 'sample3.jpg', path: '/uploads/sample3.jpg' }
+        const messages = [
+          { name: "User 1", date: "07/30/2025 12:34", message: "Hello! This is a test message." },
+          { name: "User 2", date: "07/30/2025 12:40", message: "Great server! Everything works as expected." }
         ];
         
-        if (testFiles.length === 0) {
-          fileContainer.innerHTML = '<p class="loading">JPG файлов не найдено.</p>';
+        if (messages.length === 0) {
+          messagesContainer.innerHTML = '<p>No messages yet.</p>';
           return;
         }
         
-        fileContainer.innerHTML = '';
-        
-        // Добавляем каждый файл в контейнер
-        testFiles.forEach(file => {
-          const fileDiv = document.createElement('div');
-          fileDiv.className = 'file-entry';
-          
-          fileDiv.innerHTML = `
-            <img src="${file.path}" alt="${file.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+SW1hZ2Ugbm90IGZvdW5kPC90ZXh0Pjwvc3ZnPg==';">
-            <div class="file-info">
-              <span>${file.name}</span>
+        messagesContainer.innerHTML = '';
+        messages.forEach(msg => {
+          const messageDiv = document.createElement('div');
+          messageDiv.className = 'message';
+          messageDiv.innerHTML = `
+            <div>
+              <span class="message-name">${msg.name}</span>
+              <span class="message-date">${msg.date}</span>
             </div>
-            <div class="file-actions">
-              <a href="${file.path}" target="_blank">Просмотр</a>
-              <button class="delete-btn" onclick="deleteFile('${file.path}', this)">Удалить</button>
-            </div>
+            <div>${msg.message}</div>
           `;
           
-          fileContainer.appendChild(fileDiv);
+          messagesContainer.appendChild(messageDiv);
         });
-        
-        // Добавляем кнопку для загрузки реальных файлов
-        const uploadButton = document.createElement('div');
-        uploadButton.innerHTML = `
-          <div style="margin-top: 20px; text-align: center;">
-            <p>Для отображения реальных файлов требуется настройка автоиндексации на сервере</p>
-          </div>
-        `;
-        fileContainer.appendChild(uploadButton);
       }, 500);
     }
     
-    // Загружаем файлы при загрузке страницы
-    document.addEventListener('DOMContentLoaded', loadImageFiles);
+    // Load files when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      loadImageFiles();
+      loadMessages();
+    });
   </script>
 
 </body>
