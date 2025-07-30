@@ -121,6 +121,15 @@ RequestHandler &RequestHandler::operator=(const RequestHandler &src)
 
 RequestHandler::~RequestHandler() {}
 
+HttpResponse RequestHandler::createErrorResponse(int statusCode,
+                                                const ServerConfig *server,
+                                                const std::vector<std::string> *allowed_methods,
+                                                const LocationStruct *location)
+{
+    RequestHandler tmp;
+    return tmp._createErrorResponse(statusCode, server, allowed_methods, location);
+}
+
 HttpResponse RequestHandler::handleRequest(const HttpRequest &request, int serverPort, const std::string &serverIp, const std::string &serverHost)
 {
 

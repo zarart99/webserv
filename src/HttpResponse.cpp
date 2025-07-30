@@ -37,6 +37,8 @@ std::map<int, std::string> HttpResponse::initStatusMessages()
     m[400] = "Bad Request";
     m[404] = "Not Found";
     m[405] = "Method Not Allowed";
+    m[414] = "URI Too Long";
+    m[431] = "Request Header Fields Too Large";
     m[413] = "Payload Too Large";
     m[500] = "Internal Server Error";
     m[501] = "Not Implemented";

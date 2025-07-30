@@ -24,6 +24,12 @@ public:
 
     HttpResponse handleRequest(const HttpRequest &request, int serverPort, const std::string &serverIp, const std::string &serverHost);
 
+    // Utility to create standardized error responses outside of handleRequest
+    static HttpResponse createErrorResponse(int statusCode,
+                                            const ServerConfig *server = NULL,
+                                            const std::vector<std::string> *allowed_methods = NULL,
+                                            const LocationStruct *location = NULL);
+
 protected:
     const ServerConfig* _findServerConfig(int port, const std::string& ip, const std::string& host) const;
     const LocationStruct* _findLocationFor(const ServerConfig& server, const std::string& uri) const;

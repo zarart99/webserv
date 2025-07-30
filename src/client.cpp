@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include "HttpResponse.hpp"
+#include "RequestHandler.hpp"
 #include <cstdlib>
 
 Client::Client(int fd, ServerConfig *config, const std::string& client_ip, int client_port,
@@ -21,6 +22,14 @@ void Client::handleRead()
     if (n > 0)
     {
         readBuffer.append(buf, n);
+        static const size_t MAX_HEADER_SIZE = 8192;
+        if (readBuffer.find("\r\n\r\n") == std::string::npos &&
+            readBuffer.size() > MAX_HEADER_SIZE && writeBuffer.empty())
+        {
+            HttpResponse err = RequestHandler::createErrorResponse(431);
+            writeBuffer = err.buildResponse();
+            return;
+        }
         if (isRequestReady() && writeBuffer.empty())
         {
             std::cout << "Processing HTTP request: \n"
